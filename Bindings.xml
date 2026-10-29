@@ -1,0 +1,7 @@
+<Bindings>
+  <Binding name="PFTOTEMBAR_ALL" header="PFTOTEMBAR">pfTotemBar.CastAll()</Binding>
+  <Binding name="PFTOTEMBAR_EARTH">pfTotemBar.Cast("earth")</Binding>
+  <Binding name="PFTOTEMBAR_FIRE">pfTotemBar.Cast("fire")</Binding>
+  <Binding name="PFTOTEMBAR_WATER">pfTotemBar.Cast("water")</Binding>
+  <Binding name="PFTOTEMBAR_AIR">pfTotemBar.Cast("air")</Binding>
+</Bindings>

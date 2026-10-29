@@ -1,0 +1,7 @@
+## Interface: 11200
+## Title: |cff33ffccpf|rUI |cffffffffTotem Bar
+## Author: Duciel
+## Notes: Shaman totem bar for pfUI: pick an active totem per element, left-click to cast, right-click to set active, and cast every active totem from one macro (Nampower).
+## Version: 1.0.0
+## Dependencies: pfUI
+totembar.lua
