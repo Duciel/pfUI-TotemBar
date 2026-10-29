@@ -507,7 +507,30 @@ pfUI:RegisterModule("totembar", "vanilla", function()
     end
   end
 
+  -- hide pfUI's own totem bar (pfTotems) while this bar is enabled
+  local function SuppressDefaultTotems()
+    local pft = pfUI.totems
+    if not pft then return end
+
+    if not pft.pfTotemBarHooked then
+      pft.pfTotemBarHooked = true
+      local origShow = pft.Show
+      pft.Show = function(self)
+        if cfg.enable == "1" then return self:Hide() end
+        return origShow(self)
+      end
+    end
+
+    if cfg.enable == "1" then
+      pft:Hide()
+    elseif pft.RefreshList then
+      pft:RefreshList()
+    end
+  end
+
   function bar:UpdateConfig()
+    SuppressDefaultTotems()
+
     if cfg.enable ~= "1" then
       self:Hide()
       return
@@ -754,7 +777,7 @@ pfUI:RegisterModule("totembar", "vanilla", function()
     pfUI.gui.CreateGUIEntry(T["Thirdparty"], T["Totem Bar"], function()
       local CreateConfig = pfUI.gui.CreateConfig
 
-      CreateConfig(update, T["Enable Totem Bar"], cfg, "enable", "checkbox")
+      CreateConfig(update, T["Enable Totem Bar (hides pfUI Totem Icons)"], cfg, "enable", "checkbox")
 
       CreateConfig(nil, T["Active Totems"], nil, nil, "header")
       for _, el in pairs(ELEMENTS) do
