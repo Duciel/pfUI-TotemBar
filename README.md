@@ -1,6 +1,6 @@
 # pfUI-TotemBar
 
-A [pfUI](https://github.com/shagu/pfUI) third-party module for shamans (WoW 1.12 / OctoWoW).
+A [pfUI](https://github.com/brues-code/pfUI) third-party module for shamans (WoW 1.12 / OctoWoW).
 
 ## Features
 - One button per element (Earth, Fire, Water, Air) showing your **active** totem.
@@ -46,4 +46,4 @@ Key bindings are also available under *Key Bindings → pfUI Totem Bar*.
 `pfTotemBar.SetActive("water", "mana spring")`.
 
 ## Install
-Copy the `pfUI-TotemBar` folder into `Interface\AddOns`. Requires pfUI.
+Copy the `pfUI-TotemBar` folder into `Interface\AddOns`. Requires [pfUI](https://github.com/brues-code/pfUI).
