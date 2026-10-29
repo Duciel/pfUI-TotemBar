@@ -19,10 +19,7 @@ A [pfUI](https://github.com/shagu/pfUI) third-party module for shamans (WoW 1.12
 ```
 /totembar all
 ```
-With **Nampower** the totems are fed into its spell queue one after the other, so a single press
-drops all of them back to back (Nampower can only hold one GCD spell at a time, the addon queues
-the next totem each time the previous one goes off). Without Nampower each press casts the next
-totem of the list instead.
+Casts each active totem in order, exactly like a macro with one `/cast` line per totem.
 
 Options (config → Cast All): which elements are included, the order (`earth,fire,water,air`),
 and "Skip totems that are still active" (with a remaining-time threshold).

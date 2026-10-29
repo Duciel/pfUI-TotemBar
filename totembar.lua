@@ -216,80 +216,11 @@ pfUI:RegisterModule("totembar", "vanilla", function()
     return list
   end
 
-  -- Nampower can only hold one GCD spell in its queue, so we feed it one
-  -- totem at a time: queue the next totem every time the previous one pops.
-  local NORMAL_QUEUED, NORMAL_QUEUE_POPPED = 2, 3
-  local seq = CreateFrame("Frame")
-  seq:Hide()
-
-  function seq:Stop()
-    self:Hide()
-    self.pending, self.queued = nil, nil
-  end
-
-  function seq:Next()
-    self.pos = self.pos + 1
-    local entry = self.list[self.pos]
-    if not entry then self:Stop() return end
-    self.pending, self.queued, self.sent = true, nil, GetTime()
-    QueueSpellByName(SpellString(entry))
-  end
-
-  function seq:Start(list)
-    self.list, self.pos, self.started = list, 0, GetTime()
-    self.pending, self.queued = nil, nil
-    self:Show()
-    self:Next()
-  end
-
-  seq:SetScript("OnUpdate", function()
-    local now = GetTime()
-    if now - this.started > 12 then this:Stop() return end
-    -- cast went off instantly (or failed) without being queued: move on
-    if this.pending and not this.queued and now - this.sent > .25 then this.pending = nil end
-    if not this.pending then this:Next() end
-  end)
-
-  if hasNampower then
-    seq:RegisterEvent("SPELL_QUEUE_EVENT")
-    seq:SetScript("OnEvent", function()
-      if not this:IsShown() then return end
-      if arg1 == NORMAL_QUEUED and this.pending then
-        this.queued = true
-      elseif arg1 == NORMAL_QUEUE_POPPED and this.queued then
-        this.pending, this.queued = nil, nil
-      end
-    end)
-  end
-
-  -- without Nampower: every press casts the next totem of the list
-  local fallback = { pos = 0, last = 0, warned = nil }
-  local function FallbackCastAll(list)
-    if not fallback.warned then
-      Print("Nampower not detected - each press casts the next totem instead of all at once.")
-      fallback.warned = true
-    end
-
-    local count = table.getn(list)
-    if count == 0 then return end
-    if GetTime() - fallback.last > 5 or fallback.pos >= count then fallback.pos = 0 end
-
-    local entry = list[fallback.pos + 1]
-    local start, duration = GetSpellCooldown(entry.index, BOOKTYPE_SPELL)
-    if start > 0 and duration > 0 and duration <= 1.5 then return end -- global cooldown, wait
-
-    fallback.pos = fallback.pos + 1
-    fallback.last = GetTime()
-    if not (start > 0 and duration > 1.5) then Cast(entry) end
-  end
-
   local function CastAll()
     local list = BuildCastList()
-    if not list[1] then return end
-    if hasNampower then
-      seq:Start(list)
-    else
-      FallbackCastAll(list)
+    -- same as a macro with one /cast line per totem
+    for i = 1, table.getn(list) do
+      Cast(list[i])
     end
   end
 
@@ -741,7 +672,7 @@ pfUI:RegisterModule("totembar", "vanilla", function()
       Print("spellbook rescanned.")
     else
       Print("commands:")
-      DEFAULT_CHAT_FRAME:AddMessage("  /totembar all |cffaaaaaa- cast every active totem" .. (hasNampower and "" or " (one per press without Nampower)"))
+      DEFAULT_CHAT_FRAME:AddMessage("  /totembar all |cffaaaaaa- cast every active totem")
       DEFAULT_CHAT_FRAME:AddMessage("  /totembar earth|fire|water|air |cffaaaaaa- cast the active totem of an element")
       DEFAULT_CHAT_FRAME:AddMessage("  /totembar next|prev <element> |cffaaaaaa- cycle the active totem")
       DEFAULT_CHAT_FRAME:AddMessage("  /totembar set <element> <name> |cffaaaaaa- e.g. /totembar set air windfury")
