@@ -28,6 +28,7 @@ pfUI:RegisterModule("totembar", "vanilla", function()
     order      = "earth,fire,water,air",               -- cast-all order (and bar order)
     skipactive = "1",                                  -- cast-all skips totems already down
     skipremain = "0",                                  -- ...unless less than X seconds left
+    rangecheck = "1",                                  -- recast totems you are out of range of (UnitXP)
     size       = "30",
     spacing    = "2",
     direction  = "HORIZONTAL",
@@ -125,6 +126,43 @@ pfUI:RegisterModule("totembar", "vanilla", function()
     return nil
   end
 
+  local ScanRange
+  -- [[ totem ranges ]] --
+  -- read "within X yards" from the spell tooltip, fall back to this table
+  -- (0 = never treat as out of range)
+  local RANGE_FALLBACK = {
+    ["spell_nature_stoneclawtotem"] = 0,   -- Stoneclaw: taunt, no aura
+    ["spell_nature_groundingtotem"] = 0,   -- Grounding
+    ["spell_nature_removecurse"] = 0,      -- Sentry
+    ["spell_nature_tremortotem"] = 30,
+    ["spell_fire_selfdestruct"] = 8,       -- Magma
+    ["spell_fire_sealoffire"] = 10,        -- Fire Nova
+    ["spell_nature_strengthofearthtotem02"] = 10, -- Earthbind
+  }
+  local DEFAULT_RANGE = 20
+
+  local scanner = CreateFrame("GameTooltip", "pfTotemBarScanner", nil, "GameTooltipTemplate")
+  scanner:SetOwner(WorldFrame, "ANCHOR_NONE")
+
+  function ScanRange(index, tex)
+    local key = ShortTexture(tex)
+    if RANGE_FALLBACK[key] then return RANGE_FALLBACK[key] end
+
+    scanner:SetOwner(WorldFrame, "ANCHOR_NONE")
+    scanner:ClearLines()
+    scanner:SetSpell(index, BOOKTYPE_SPELL)
+    for line = 2, (scanner:NumLines() or 0) do
+      local left = _G["pfTotemBarScannerTextLeft" .. line]
+      local text = left and left:GetText()
+      if text then
+        local _, _, yards = string.find(text, "(%d+) ?[yY]a?r?d")
+        if not yards then _, _, yards = string.find(text, "(%d+) ?m[eè]tres") end
+        if yards then return tonumber(yards) end
+      end
+    end
+    return DEFAULT_RANGE
+  end
+
   local function Scan()
     for _, el in pairs(ELEMENTS) do known[el] = {} end
     byname = {}
@@ -151,6 +189,7 @@ pfUI:RegisterModule("totembar", "vanilla", function()
         end
         -- spellbook lists ranks in ascending order: the last one wins
         entry.index, entry.rank, entry.icon = i, rank, tex
+        entry.range = ScanRange(i, tex)
       end
 
       i = i + 1
@@ -200,14 +239,40 @@ pfUI:RegisterModule("totembar", "vanilla", function()
     return order
   end
 
+  -- [[ totem state ]] --
+  -- GUID of each totem we dropped, learned from the combat log (ClassicAPI)
+  local totemGUID = {}
+
+  -- returns start, duration when the active totem of the element is the one down
+  local function ActiveTotemDown(entry)
+    if not GetTotemInfo then return nil end
+    local _, name, start, duration, icon = GetTotemInfo(SLOT[entry.element])
+    if not start or start <= 0 then return nil end
+    local same = (icon and icon ~= "" and entry.icon and string.lower(icon) == string.lower(entry.icon))
+      or (name and string.find(name, entry.name, 1, true) == 1)
+    if not same then return nil end
+    return start, duration or 0
+  end
+
+  -- nil = in range or unknown, otherwise the distance
+  local function OutOfRange(entry)
+    if cfg.rangecheck ~= "1" or not UnitXP then return nil end
+    local guid = totemGUID[entry.element]
+    local range = entry.range or DEFAULT_RANGE
+    if not guid or range <= 0 then return nil end
+    local ok, dist = pcall(UnitXP, "distanceBetween", "player", guid, "AoE")
+    if ok and dist and dist > range then return dist end
+    return nil
+  end
+
   -- [[ cast all ]] --
   local function ShouldSkip(entry)
-    if cfg.skipactive ~= "1" or not GetTotemInfo then return nil end
-    local active, name, start, duration = GetTotemInfo(SLOT[entry.element])
-    if not active or not name or not start or start <= 0 then return nil end
-    -- another totem of this element is down: replace it with the active one
-    if string.find(name, entry.name, 1, true) ~= 1 then return nil end
-    local remain = start + (duration or 0) - GetTime()
+    if cfg.skipactive ~= "1" then return nil end
+    local start, duration = ActiveTotemDown(entry)
+    -- missing, or another totem of this element is down: cast the active one
+    if not start then return nil end
+    if OutOfRange(entry) then return nil end
+    local remain = start + duration - GetTime()
     return remain > (tonumber(cfg.skipremain) or 0)
   end
 
@@ -562,7 +627,11 @@ pfUI:RegisterModule("totembar", "vanilla", function()
             local remain = tstart + tduration - GetTime()
             if remain > 0 then
               -- white when your active totem is down, grey when another one is
-              local color = (name and string.find(name, entry.name, 1, true) == 1) and "|cffffffff" or "|cffaaaaaa"
+              -- white: your active totem, red: out of range, grey: another totem
+              local color = "|cffaaaaaa"
+              if ActiveTotemDown(entry) then
+                color = OutOfRange(entry) and "|cffff5555" or "|cffffffff"
+              end
               text = color .. FormatTime(remain) .. "|r"
             end
           end
@@ -578,7 +647,31 @@ pfUI:RegisterModule("totembar", "vanilla", function()
   events:RegisterEvent("SPELLS_CHANGED")
   events:RegisterEvent("LEARNED_SPELL_IN_TAB")
   events:SetScript("OnEvent", function()
-    if event == "SPELL_CAST_EVENT" then
+    if event == "COMBAT_LOG_EVENT_UNFILTERED" then
+      local _, sub, _, src, _, _, _, dst, _, _, _, spellId, spellName = CombatLogGetCurrentEventInfo()
+      if sub == "SPELL_SUMMON" then
+        this.player = this.player or UnitGUID("player")
+        if src ~= this.player then return end
+        local entry = spellName and byname[spellName]
+        if not entry and spellId and GetSpellInfo then
+          entry = byname[GetSpellInfo(spellId) or ""]
+        end
+        if entry then totemGUID[entry.element] = dst end
+      elseif sub == "UNIT_DIED" or sub == "UNIT_DESTROYED" then
+        for el, guid in pairs(totemGUID) do
+          if guid == dst then totemGUID[el] = nil end
+        end
+      end
+      return
+    elseif event == "PLAYER_TOTEM_UPDATE" then
+      -- slot emptied: forget its GUID
+      local el = SLOT2EL[arg1]
+      if el and GetTotemInfo then
+        local _, _, start = GetTotemInfo(arg1)
+        if not start or start <= 0 then totemGUID[el] = nil end
+      end
+      return
+    elseif event == "SPELL_CAST_EVENT" then
       -- queued casts bypass the CastSpellByName hook pfUI uses to track totems
       if arg1 == 1 and GetSpellNameAndRankForId and pfUI.api.libtotem then
         local name, rank = GetSpellNameAndRankForId(arg2)
@@ -595,6 +688,10 @@ pfUI:RegisterModule("totembar", "vanilla", function()
     Scan()
     bar:UpdateConfig()
   end)
+  if CombatLogGetCurrentEventInfo and UnitGUID then
+    events:RegisterEvent("COMBAT_LOG_EVENT_UNFILTERED")
+    events:RegisterEvent("PLAYER_TOTEM_UPDATE")
+  end
   if hasNampower and GetSpellNameAndRankForId then
     events:RegisterEvent("SPELL_CAST_EVENT")
   end
@@ -730,6 +827,7 @@ pfUI:RegisterModule("totembar", "vanilla", function()
       CreateConfig(update, T["Cast Order (also the bar order)"], cfg, "order", nil, nil, nil, nil, "STRING")
       CreateConfig(update, T["Skip Totems That Are Still Active"], cfg, "skipactive", "checkbox")
       CreateConfig(update, T["...Unless Less Than X Seconds Left (0 = only when gone)"], cfg, "skipremain")
+      CreateConfig(update, T["...Or You Are Out Of Its Range (UnitXP)"], cfg, "rangecheck", "checkbox")
 
       CreateConfig(nil, T["Layout"], nil, nil, "header")
       CreateConfig(update, T["Button Size"], cfg, "size")

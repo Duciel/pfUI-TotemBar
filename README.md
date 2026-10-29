@@ -21,8 +21,14 @@ A [pfUI](https://github.com/shagu/pfUI) third-party module for shamans (WoW 1.12
 ```
 Casts each active totem in order, exactly like a macro with one `/cast` line per totem.
 
+By default it only refreshes what is missing: a totem that is still up is skipped, unless it is
+about to expire (configurable threshold) or, with the **UnitXP_SP3** DLL, you are out of its range.
+The range of each totem is read from its tooltip ("within X yards"); the bar timer turns red when
+you are out of range. Totem positions are learned when you drop them (ClassicAPI combat log), so
+totems dropped before a `/reload` are not range-checked until recast.
+
 Options (config → Cast All): which elements are included, the order (`earth,fire,water,air`),
-and "Skip totems that are still active" (with a remaining-time threshold).
+skip-still-active, the remaining-time threshold and the range check.
 
 Key bindings are also available under *Key Bindings → pfUI Totem Bar*.
 
