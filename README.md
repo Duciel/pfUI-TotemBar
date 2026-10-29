@@ -25,7 +25,8 @@ By default it only refreshes what is missing: a totem that is still up is skippe
 about to expire (configurable threshold) or, with the **[UnitXP_SP3](https://github.com/brues-code/UnitXP_SP3)** DLL, you are out of its range.
 The range of each totem is read from its tooltip ("within X yards"); the bar timer turns red when
 you are out of range. Your totems are recognised (ClassicAPI UnitOwnerGUID / UnitCreatedBySpell) when
-they show up as the source of a buff/heal/mana/damage tick, or on target, mouseover or a nameplate.
+they pulse their spell or their aura lands on you (Nampower `SPELL_GO_OTHER` / `AURA_CAST_ON_SELF`),
+or when they appear on target, mouseover or a nameplate.
 `/totembar debug` prints what is tracked.
 
 Options (config → Cast All): which elements are included, the order (`earth,fire,water,air`),

@@ -700,6 +700,14 @@ pfUI:RegisterModule("totembar", "vanilla", function()
       if src and string.sub(src, 1, 4) == "0xF1" then LearnGUID(src) end
       if sub == "SPELL_SUMMON" and dst then LearnGUID(dst) end
       return
+    elseif event == "SPELL_GO_OTHER" then
+      -- Nampower: a totem pulsing its spell (arg3 = caster GUID)
+      if arg3 and string.sub(arg3, 1, 4) == "0xF1" then LearnGUID(arg3) end
+      return
+    elseif event == "AURA_CAST_ON_SELF" then
+      -- Nampower: a totem aura landing on us (arg2 = caster GUID)
+      if arg2 and string.sub(arg2, 1, 4) == "0xF1" then LearnGUID(arg2) end
+      return
     elseif event == "PLAYER_TARGET_CHANGED" then
       LearnUnit("target")
       return
@@ -740,6 +748,11 @@ pfUI:RegisterModule("totembar", "vanilla", function()
     events:RegisterEvent("PLAYER_TARGET_CHANGED")
     events:RegisterEvent("UPDATE_MOUSEOVER_UNIT")
     events:RegisterEvent("NAME_PLATE_UNIT_ADDED")
+    if hasNampower then
+      -- Nampower 4.5+ enables these events when they are registered
+      events:RegisterEvent("SPELL_GO_OTHER")
+      events:RegisterEvent("AURA_CAST_ON_SELF")
+    end
   end
   if hasNampower and GetSpellNameAndRankForId then
     events:RegisterEvent("SPELL_CAST_EVENT")
