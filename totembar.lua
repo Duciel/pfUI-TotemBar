@@ -26,8 +26,8 @@ pfUI:RegisterModule("totembar", "vanilla", function()
     earth      = "", fire = "", water = "", air = "",   -- active totem per element (spell name)
     all_earth  = "1", all_fire = "1", all_water = "1", all_air = "1",
     order      = "earth,fire,water,air",               -- cast-all order (and bar order)
-    skipactive = "0",                                  -- cast-all skips totems already down
-    skipremain = "10",                                 -- ...unless less than X seconds left
+    skipactive = "1",                                  -- cast-all skips totems already down
+    skipremain = "0",                                  -- ...unless less than X seconds left
     size       = "30",
     spacing    = "2",
     direction  = "HORIZONTAL",
@@ -38,6 +38,13 @@ pfUI:RegisterModule("totembar", "vanilla", function()
   }
   for key, value in pairs(defaults) do
     pfUI:UpdateConfig("totembar", nil, key, value)
+  end
+
+  -- v1.1: cast-all only refreshes missing totems by default
+  if not C.totembar.migrated_skip then
+    C.totembar.skipactive = "1"
+    C.totembar.skipremain = "0"
+    C.totembar.migrated_skip = "1"
   end
 
   if class ~= "SHAMAN" then
@@ -197,9 +204,10 @@ pfUI:RegisterModule("totembar", "vanilla", function()
   local function ShouldSkip(entry)
     if cfg.skipactive ~= "1" or not GetTotemInfo then return nil end
     local active, name, start, duration = GetTotemInfo(SLOT[entry.element])
-    if not active or not name then return nil end
+    if not active or not name or not start or start <= 0 then return nil end
+    -- another totem of this element is down: replace it with the active one
     if string.find(name, entry.name, 1, true) ~= 1 then return nil end
-    local remain = start + duration - GetTime()
+    local remain = start + (duration or 0) - GetTime()
     return remain > (tonumber(cfg.skipremain) or 0)
   end
 
@@ -721,7 +729,7 @@ pfUI:RegisterModule("totembar", "vanilla", function()
       end
       CreateConfig(update, T["Cast Order (also the bar order)"], cfg, "order", nil, nil, nil, nil, "STRING")
       CreateConfig(update, T["Skip Totems That Are Still Active"], cfg, "skipactive", "checkbox")
-      CreateConfig(update, T["...Unless Less Than X Seconds Left"], cfg, "skipremain")
+      CreateConfig(update, T["...Unless Less Than X Seconds Left (0 = only when gone)"], cfg, "skipremain")
 
       CreateConfig(nil, T["Layout"], nil, nil, "header")
       CreateConfig(update, T["Button Size"], cfg, "size")
