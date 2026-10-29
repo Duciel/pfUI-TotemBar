@@ -409,7 +409,7 @@ pfUI:RegisterModule("totembar", "vanilla", function()
 
     b.cdbg = CreateFrame("Frame", nil, b)
     b.cdbg:SetPoint("CENTER", b, "CENTER", 0, 0)
-    b.cd = CreateFrame(COOLDOWN_FRAME_TYPE, "pfTotemBar" .. el .. "Cooldown", b.cdbg, "CooldownFrameTemplate")
+    b.cd = CreateFrame(COOLDOWN_FRAME_TYPE or "Model", "pfTotemBar" .. el .. "Cooldown", b.cdbg, "CooldownFrameTemplate")
     b.cd.pfCooldownType = "ALL"
 
     b.textframe = CreateFrame("Frame", nil, b)
