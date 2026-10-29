@@ -10,10 +10,10 @@ A [pfUI](https://github.com/brues-code/pfUI) third-party module for shamans (WoW
   - **Right-click** a totem: make it the active totem of that element.
 - Choose the active totem of each element from a dropdown in the pfUI config
   (`/pfui` → Thirdparty → Totem Bar).
-- Cooldown swipe, out-of-mana tint (Nampower) and remaining time of the totem currently down.
+- Cooldown swipe, out-of-mana tint ([Nampower](https://github.com/brues-code/nampower)) and remaining time of the totem currently down.
 - Movable with pfUI's unlock mode; size, spacing, bar direction and list direction are configurable.
 - Always casts the highest rank you know. Totems are detected by icon (locale independent), and
-  with Nampower also by spell effect, so custom server totems show up too.
+  with [Nampower](https://github.com/brues-code/nampower) also by spell effect, so custom server totems show up too.
 
 ## Cast every active totem from one macro
 ```
@@ -22,7 +22,7 @@ A [pfUI](https://github.com/brues-code/pfUI) third-party module for shamans (WoW
 Casts each active totem in order, exactly like a macro with one `/cast` line per totem.
 
 By default it only refreshes what is missing: a totem that is still up is skipped, unless it is
-about to expire (configurable threshold) or, with the **UnitXP_SP3** DLL, you are out of its range.
+about to expire (configurable threshold) or, with the **[UnitXP_SP3](https://github.com/brues-code/UnitXP_SP3)** DLL, you are out of its range.
 The range of each totem is read from its tooltip ("within X yards"); the bar timer turns red when
 you are out of range. Totem positions are learned when you drop them (ClassicAPI combat log), so
 totems dropped before a `/reload` are not range-checked until recast.
