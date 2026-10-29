@@ -24,8 +24,9 @@ Casts each active totem in order, exactly like a macro with one `/cast` line per
 By default it only refreshes what is missing: a totem that is still up is skipped, unless it is
 about to expire (configurable threshold) or, with the **[UnitXP_SP3](https://github.com/brues-code/UnitXP_SP3)** DLL, you are out of its range.
 The range of each totem is read from its tooltip ("within X yards"); the bar timer turns red when
-you are out of range. Totem positions are learned when you drop them (ClassicAPI combat log), so
-totems dropped before a `/reload` are not range-checked until recast.
+you are out of range. Your totems are recognised (ClassicAPI UnitOwnerGUID / UnitCreatedBySpell) when
+they show up as the source of a buff/heal/mana/damage tick, or on target, mouseover or a nameplate.
+`/totembar debug` prints what is tracked.
 
 Options (config → Cast All): which elements are included, the order (`earth,fire,water,air`),
 skip-still-active, the remaining-time threshold and the range check.

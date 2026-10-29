@@ -240,8 +240,49 @@ pfUI:RegisterModule("totembar", "vanilla", function()
   end
 
   -- [[ totem state ]] --
-  -- GUID of each totem we dropped, learned from the combat log (ClassicAPI)
+  -- GUID of each of our totems. Candidates come from the combat log (totems
+  -- are the source of their own buff/heal/mana/damage ticks), target,
+  -- mouseover and nameplates; ClassicAPI's UnitOwnerGUID / UnitCreatedBySpell
+  -- confirm it is ours and tell which slot it belongs to.
   local totemGUID = {}
+  local notMine, notMineCount = {}, 0
+  local playerGUID
+
+  local function SameGUID(a, b)
+    return a and b and string.upper(a) == string.upper(b)
+  end
+
+  local function LearnGUID(guid)
+    if not guid or guid == "" or notMine[guid] then return end
+    if not UnitOwnerGUID or not UnitCreatedBySpell or not GetTotemInfo then return end
+    for _, known in pairs(totemGUID) do
+      if known == guid then return end
+    end
+
+    playerGUID = playerGUID or UnitGUID("player")
+    local okOwner, owner = pcall(UnitOwnerGUID, guid)
+    if not okOwner or not SameGUID(owner, playerGUID) then
+      -- remember strangers so busy raid combat logs stay cheap
+      if notMineCount > 2000 then notMine, notMineCount = {}, 0 end
+      notMine[guid] = true
+      notMineCount = notMineCount + 1
+      return
+    end
+
+    local okSpell, spellId = pcall(UnitCreatedBySpell, guid)
+    if not okSpell or not spellId then return end
+    for slot = 1, 4 do
+      local _, _, start, _, _, _, sid = GetTotemInfo(slot)
+      if start and start > 0 and sid == spellId then
+        totemGUID[SLOT2EL[slot]] = guid
+        return
+      end
+    end
+  end
+
+  local function LearnUnit(unit)
+    if UnitExists(unit) then LearnGUID(UnitGUID(unit)) end
+  end
 
   -- returns start, duration when the active totem of the element is the one down
   local function ActiveTotemDown(entry)
@@ -648,20 +689,25 @@ pfUI:RegisterModule("totembar", "vanilla", function()
   events:RegisterEvent("LEARNED_SPELL_IN_TAB")
   events:SetScript("OnEvent", function()
     if event == "COMBAT_LOG_EVENT_UNFILTERED" then
-      local _, sub, _, src, _, _, _, dst, _, _, _, spellId, spellName = CombatLogGetCurrentEventInfo()
-      if sub == "SPELL_SUMMON" then
-        this.player = this.player or UnitGUID("player")
-        if src ~= this.player then return end
-        local entry = spellName and byname[spellName]
-        if not entry and spellId and GetSpellInfo then
-          entry = byname[GetSpellInfo(spellId) or ""]
-        end
-        if entry then totemGUID[entry.element] = dst end
-      elseif sub == "UNIT_DIED" or sub == "UNIT_DESTROYED" then
+      local _, sub, _, src, _, _, _, dst = CombatLogGetCurrentEventInfo()
+      if sub == "UNIT_DIED" or sub == "UNIT_DESTROYED" then
         for el, guid in pairs(totemGUID) do
           if guid == dst then totemGUID[el] = nil end
         end
+        return
       end
+      -- creatures only (0xF1...): our totems are the source of their effects
+      if src and string.sub(src, 1, 4) == "0xF1" then LearnGUID(src) end
+      if sub == "SPELL_SUMMON" and dst then LearnGUID(dst) end
+      return
+    elseif event == "PLAYER_TARGET_CHANGED" then
+      LearnUnit("target")
+      return
+    elseif event == "UPDATE_MOUSEOVER_UNIT" then
+      LearnUnit("mouseover")
+      return
+    elseif event == "NAME_PLATE_UNIT_ADDED" then
+      LearnUnit(arg1)
       return
     elseif event == "PLAYER_TOTEM_UPDATE" then
       -- slot emptied: forget its GUID
@@ -688,9 +734,12 @@ pfUI:RegisterModule("totembar", "vanilla", function()
     Scan()
     bar:UpdateConfig()
   end)
-  if CombatLogGetCurrentEventInfo and UnitGUID then
-    events:RegisterEvent("COMBAT_LOG_EVENT_UNFILTERED")
+  if UnitGUID and UnitOwnerGUID and UnitCreatedBySpell then
+    if CombatLogGetCurrentEventInfo then events:RegisterEvent("COMBAT_LOG_EVENT_UNFILTERED") end
     events:RegisterEvent("PLAYER_TOTEM_UPDATE")
+    events:RegisterEvent("PLAYER_TARGET_CHANGED")
+    events:RegisterEvent("UPDATE_MOUSEOVER_UNIT")
+    events:RegisterEvent("NAME_PLATE_UNIT_ADDED")
   end
   if hasNampower and GetSpellNameAndRankForId then
     events:RegisterEvent("SPELL_CAST_EVENT")
@@ -771,6 +820,28 @@ pfUI:RegisterModule("totembar", "vanilla", function()
         local entry = GetActive(el)
         Print(LABEL[el] .. ": " .. (entry and entry.name or "-") .. (cfg["all_" .. el] == "1" and "" or " (not in cast-all)"))
       end
+    elseif cmd == "debug" then
+      Print("UnitXP: " .. (UnitXP and "yes" or "|cffff5555no|r") ..
+        ", UnitOwnerGUID: " .. (UnitOwnerGUID and "yes" or "|cffff5555no|r") ..
+        ", combat log: " .. (CombatLogGetCurrentEventInfo and "yes" or "|cffff5555no|r") ..
+        ", range check: " .. (cfg.rangecheck == "1" and "on" or "off"))
+      for _, el in pairs(ELEMENTS) do
+        local entry = GetActive(el)
+        local name, start, sid
+        if GetTotemInfo then _, name, start, _, _, _, sid = GetTotemInfo(SLOT[el]) end
+        local guid = totemGUID[el]
+        local dist
+        if guid and UnitXP then
+          local ok, d = pcall(UnitXP, "distanceBetween", "player", guid, "AoE")
+          dist = ok and d
+        end
+        DEFAULT_CHAT_FRAME:AddMessage(string.format("  %s: active=%s range=%s | slot=%s spell=%s | guid=%s dist=%s | down=%s out=%s",
+          LABEL[el], entry and entry.name or "-", entry and tostring(entry.range) or "-",
+          (start and start > 0) and tostring(name) or "empty", tostring(sid),
+          tostring(guid), dist and string.format("%.1f", dist) or "-",
+          entry and (ActiveTotemDown(entry) and "yes" or "no") or "-",
+          entry and (OutOfRange(entry) and "|cffff5555yes|r" or "no") or "-"))
+      end
     elseif cmd == "scan" then
       Scan()
       bar:UpdateConfig()
@@ -783,6 +854,7 @@ pfUI:RegisterModule("totembar", "vanilla", function()
       DEFAULT_CHAT_FRAME:AddMessage("  /totembar set <element> <name> |cffaaaaaa- e.g. /totembar set air windfury")
       DEFAULT_CHAT_FRAME:AddMessage("  /totembar list |cffaaaaaa- show the active totems")
       DEFAULT_CHAT_FRAME:AddMessage("  /totembar scan |cffaaaaaa- rescan the spellbook")
+      DEFAULT_CHAT_FRAME:AddMessage("  /totembar debug |cffaaaaaa- show totem tracking and range info")
     end
   end
 
