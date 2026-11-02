@@ -137,16 +137,18 @@ pfUI:RegisterModule("totembar", "vanilla", function()
     return string.lower(short or tex)
   end
 
+  -- Nampower: the totem slot from the spell's own data (summon totem effect)
+  -- returns the slot, false when the spell is not a totem, nil when unknown
   local function SlotByEffect(name)
     if not GetSpellIdForName or not GetSpellRecField then return nil end
-    local id = GetSpellIdForName(name)
-    if not id or id == 0 then return nil end
+    local okId, id = pcall(GetSpellIdForName, name)
+    if not okId or not id or id == 0 then return nil end
     local ok, effects = pcall(GetSpellRecField, id, "effect")
     if not ok or type(effects) ~= "table" then return nil end
     for _, effect in pairs(effects) do
       if TOTEM_EFFECTS[effect] then return TOTEM_EFFECTS[effect] end
     end
-    return nil
+    return false
   end
 
   local ScanRange
@@ -190,17 +192,23 @@ pfUI:RegisterModule("totembar", "vanilla", function()
     for _, el in pairs(GROUPS) do known[el] = {} end
     byname = {}
 
-    -- only the class tabs (General + 3 talent trees): servers add Mounts /
-    -- Companions / Toys tabs after them, with pets that reuse totem icons
-    local first, last = 1, nil
+    -- spellbook indexes in Mounts / Companions / Toys tabs (for the icon fallback)
+    local collection = {}
     if GetNumSpellTabs and GetSpellTabInfo then
-      local tabs = math.min(GetNumSpellTabs() or 0, 4)
-      local _, _, offset, count = GetSpellTabInfo(tabs)
-      if offset and count then last = offset + count end
+      for tab = 1, GetNumSpellTabs() or 0 do
+        local tabname, _, offset, count = GetSpellTabInfo(tab)
+        local lname = string.lower(tabname or "")
+        if offset and count and (string.find(lname, "mount") or string.find(lname, "companion")
+          or string.find(lname, "toy") or string.find(lname, "monture") or string.find(lname, "compagnon")
+          or string.find(lname, "jouet") or string.find(lname, "reittier") or string.find(lname, "haustier")
+          or string.find(lname, "spielzeug")) then
+          for idx = offset + 1, offset + count do collection[idx] = true end
+        end
+      end
     end
 
-    local i = first
-    while not last or i <= last do
+    local i = 1
+    while true do
       local name, rank = GetSpellName(i, BOOKTYPE_SPELL)
       if not name then break end
 
@@ -209,11 +217,14 @@ pfUI:RegisterModule("totembar", "vanilla", function()
       if SHIELD_TEXTURES[ShortTexture(tex)] or SHIELD_NAMES[string.lower(name)] then
         el = "shield"
       else
-        local slot = TEXTURES[ShortTexture(tex)]
-        if not slot then
-          if effectCache[name] == nil then effectCache[name] = SlotByEffect(name) or false end
-          slot = effectCache[name] or nil
+        -- spell data first (companions and toys can reuse totem icons),
+        -- the icon table only when the spell data can't be read
+        if effectCache[name] == nil then
+          local bySpell = SlotByEffect(name)
+          if bySpell ~= nil then effectCache[name] = bySpell end
         end
+        local slot = effectCache[name]
+        if slot == nil and not collection[i] then slot = TEXTURES[ShortTexture(tex)] end
         el = slot and SLOT2EL[slot]
       end
 
