@@ -190,8 +190,17 @@ pfUI:RegisterModule("totembar", "vanilla", function()
     for _, el in pairs(GROUPS) do known[el] = {} end
     byname = {}
 
-    local i = 1
-    while true do
+    -- only the class tabs (General + 3 talent trees): servers add Mounts /
+    -- Companions / Toys tabs after them, with pets that reuse totem icons
+    local first, last = 1, nil
+    if GetNumSpellTabs and GetSpellTabInfo then
+      local tabs = math.min(GetNumSpellTabs() or 0, 4)
+      local _, _, offset, count = GetSpellTabInfo(tabs)
+      if offset and count then last = offset + count end
+    end
+
+    local i = first
+    while not last or i <= last do
       local name, rank = GetSpellName(i, BOOKTYPE_SPELL)
       if not name then break end
 
