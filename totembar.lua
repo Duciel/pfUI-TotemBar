@@ -589,8 +589,9 @@ pfUI:RegisterModule("totembar", "vanilla", function()
   function bar:BuildFlyout(el)
     local b = self.buttons[el]
     local fly, active = b.fly, GetActive(el)
-    local list = { NONE }
+    local list = {}
     for _, entry in pairs(known[el]) do table.insert(list, entry) end
+    table.insert(list, NONE)
     local size, spacing, dir = self.size, self.spacing, cfg.flyout
     local count = table.getn(list)
     local step = size + spacing
@@ -1026,10 +1027,11 @@ pfUI:RegisterModule("totembar", "vanilla", function()
 
     local function TotemValues(el)
       return function()
-        local values = { NONE .. ":" .. NONE_TEXT }
+        local values = {}
         for _, entry in pairs(known[el]) do
           table.insert(values, entry.name .. ":" .. entry.name)
         end
+        table.insert(values, NONE .. ":" .. NONE_TEXT)
         return values
       end
     end
