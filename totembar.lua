@@ -17,6 +17,7 @@ BINDING_NAME_PFTOTEMBAR_FIRE = "Cast active Fire totem"
 BINDING_NAME_PFTOTEMBAR_WATER = "Cast active Water totem"
 BINDING_NAME_PFTOTEMBAR_AIR = "Cast active Air totem"
 BINDING_NAME_PFTOTEMBAR_SHIELD = "Cast active shield"
+BINDING_NAME_PFTOTEMBAR_TOTEMS = "Cast the 4 active totems (no shield)"
 
 pfUI:RegisterModule("totembar", "vanilla", function()
   local _, class = UnitClass("player")
@@ -57,6 +58,7 @@ pfUI:RegisterModule("totembar", "vanilla", function()
     _G.pfTotemBar.CastAll = function() end
     _G.pfTotemBar.Cast = function() end
     _G.pfTotemBar.CastShield = function() end
+    _G.pfTotemBar.CastTotems = function() end
     return
   end
 
@@ -367,17 +369,31 @@ pfUI:RegisterModule("totembar", "vanilla", function()
     return remain > (tonumber(cfg.skipremain) or 0)
   end
 
-  local function BuildCastList()
+  -- totemsOnly: the 4 totems (ignores the cast-all include boxes), no shield
+  local function BuildCastList(totemsOnly, force)
     local list = {}
     for _, el in pairs(ParseOrder()) do
-      if cfg["all_" .. el] == "1" then
+      local wanted
+      if totemsOnly then wanted = SLOT[el] else wanted = cfg["all_" .. el] == "1" end
+      if wanted then
         local entry = GetActive(el)
-        if entry and not ShouldSkip(entry) then
+        if entry and (force or not ShouldSkip(entry)) then
           table.insert(list, entry)
         end
       end
     end
     return list
+  end
+
+  local function CastList(list)
+    for i = 1, table.getn(list) do
+      Cast(list[i])
+    end
+  end
+
+  -- the 4 totems that need a refresh (force = all 4), never the shield
+  local function CastTotems(force)
+    CastList(BuildCastList(true, force))
   end
 
   local function CastAll()
@@ -853,6 +869,7 @@ pfUI:RegisterModule("totembar", "vanilla", function()
   _G.pfTotemBar.CastAll = CastAll
   _G.pfTotemBar.Cast = CastElement
   _G.pfTotemBar.CastShield = function(force) CastElement("shield", force) end
+  _G.pfTotemBar.CastTotems = CastTotems
   _G.pfTotemBar.Next = function(el) if VALID[el] then Cycle(el, 1) end end
   _G.pfTotemBar.Prev = function(el) if VALID[el] then Cycle(el, -1) end end
   _G.pfTotemBar.SetActive = function(el, name)
@@ -872,6 +889,8 @@ pfUI:RegisterModule("totembar", "vanilla", function()
 
     if cmd == "all" then
       CastAll()
+    elseif cmd == "totems" then
+      CastTotems(string.lower(rest) == "force")
     elseif VALID[cmd] then
       CastElement(cmd, string.lower(rest) == "force")
     elseif (cmd == "next" or cmd == "prev") and VALID[string.lower(rest)] then
@@ -922,7 +941,8 @@ pfUI:RegisterModule("totembar", "vanilla", function()
       Print("spellbook rescanned.")
     else
       Print("commands:")
-      DEFAULT_CHAT_FRAME:AddMessage("  /totembar all |cffaaaaaa- cast every active totem")
+      DEFAULT_CHAT_FRAME:AddMessage("  /totembar all |cffaaaaaa- cast everything ticked in Cast All that needs a refresh")
+      DEFAULT_CHAT_FRAME:AddMessage("  /totembar totems [force] |cffaaaaaa- cast the 4 active totems that need a refresh (no shield)")
       DEFAULT_CHAT_FRAME:AddMessage("  /totembar earth|fire|water|air |cffaaaaaa- cast the active totem of an element if it needs a refresh")
       DEFAULT_CHAT_FRAME:AddMessage("  /totembar shield |cffaaaaaa- cast the active shield if it is gone / low on charges")
       DEFAULT_CHAT_FRAME:AddMessage("  /totembar <element|shield> force |cffaaaaaa- cast it even if it is still up")

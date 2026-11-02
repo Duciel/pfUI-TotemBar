@@ -45,6 +45,7 @@ It can also be included in `/totembar all`.
 | --- | --- |
 | `/totembar all` | cast every active totem |
 | `/totembar earth\|fire\|water\|air` | cast the active totem of that element, if it needs a refresh |
+| `/totembar totems` | cast the 4 active totems that need a refresh, never the shield (`force` = all 4) |
 | `/totembar shield` | cast the active shield, if it is gone or low on charges |
 | `/totembar <element\|shield> force` | cast it even if it is still up |
 | `/totembar next\|prev <element>` | cycle the active totem of an element |
@@ -53,7 +54,7 @@ It can also be included in `/totembar all`.
 | `/totembar scan` | rescan the spellbook |
 
 `/ptb` is a short alias. For scripts: `pfTotemBar.CastAll()`, `pfTotemBar.Cast("fire")`,
-`pfTotemBar.CastShield()`, `pfTotemBar.SetActive("water", "mana spring")`.
+`pfTotemBar.CastTotems()`, `pfTotemBar.CastShield()`, `pfTotemBar.SetActive("water", "mana spring")`.
 
 ## Install
 Copy the `pfUI-TotemBar` folder into `Interface\AddOns`. Requires [pfUI](https://github.com/brues-code/pfUI).
