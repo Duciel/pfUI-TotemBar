@@ -16,6 +16,7 @@ BINDING_NAME_PFTOTEMBAR_EARTH = "Cast active Earth totem"
 BINDING_NAME_PFTOTEMBAR_FIRE = "Cast active Fire totem"
 BINDING_NAME_PFTOTEMBAR_WATER = "Cast active Water totem"
 BINDING_NAME_PFTOTEMBAR_AIR = "Cast active Air totem"
+BINDING_NAME_PFTOTEMBAR_SHIELD = "Cast active shield"
 
 pfUI:RegisterModule("totembar", "vanilla", function()
   local _, class = UnitClass("player")
@@ -29,6 +30,10 @@ pfUI:RegisterModule("totembar", "vanilla", function()
     skipactive = "1",                                  -- cast-all skips totems already down
     skipremain = "0",                                  -- ...unless less than X seconds left
     rangecheck = "1",                                  -- recast totems you are out of range of (UnitXP)
+    shield     = "",                                   -- active shield (spell name)
+    all_shield = "0",                                  -- include the shield in cast-all
+    shieldcharges = "0",                               -- recast the shield at X charges or less (0 = only when gone)
+    showshield = "1",                                  -- show the shield button on the bar
     size       = "30",
     spacing    = "2",
     direction  = "HORIZONTAL",
@@ -51,6 +56,7 @@ pfUI:RegisterModule("totembar", "vanilla", function()
   if class ~= "SHAMAN" then
     _G.pfTotemBar.CastAll = function() end
     _G.pfTotemBar.Cast = function() end
+    _G.pfTotemBar.CastShield = function() end
     return
   end
 
@@ -58,15 +64,30 @@ pfUI:RegisterModule("totembar", "vanilla", function()
   local PREFIX = "|cff33ffccpf|rTotemBar: "
   local hasNampower = QueueSpellByName and true or nil
 
-  local ELEMENTS = { "earth", "fire", "water", "air" }
+  local ELEMENTS = { "earth", "fire", "water", "air" }              -- totem elements
+  local GROUPS = { "earth", "fire", "water", "air", "shield" }     -- everything on the bar
+  local VALID = { earth = true, fire = true, water = true, air = true, shield = true }
   local SLOT = { fire = 1, earth = 2, water = 3, air = 4 }         -- same ids as pfUI's libtotem
   local SLOT2EL = { [1] = "fire", [2] = "earth", [3] = "water", [4] = "air" }
-  local LABEL = { earth = T["Earth"], fire = T["Fire"], water = T["Water"], air = T["Air"] }
+  local LABEL = { earth = T["Earth"], fire = T["Fire"], water = T["Water"], air = T["Air"], shield = T["Shield"] }
   local COLOR = {
     earth = { .45, .75, .2 },
     fire  = { .95, .4, .1 },
     water = { .2, .6, 1 },
     air   = { .7, .45, 1 },
+    shield = { .9, .8, .2 },
+  }
+
+  -- shaman shields: icon or name (en/fr/de), checked before the totem tables
+  local SHIELD_TEXTURES = {
+    ["spell_nature_lightningshield"] = true,   -- Lightning Shield
+    ["ability_shaman_watershield"] = true,     -- Water Shield
+    ["spell_nature_skinofearth"] = true,       -- Earth Shield
+  }
+  local SHIELD_NAMES = {
+    ["lightning shield"] = true, ["water shield"] = true, ["earth shield"] = true,
+    ["bouclier de foudre"] = true, ["bouclier d'eau"] = true, ["bouclier de terre"] = true,
+    ["blitzschlagschild"] = true, ["wasserschild"] = true, ["erdschild"] = true,
   }
 
   -- icon -> totem slot (locale independent, same data pfUI's libtotem uses)
@@ -104,7 +125,7 @@ pfUI:RegisterModule("totembar", "vanilla", function()
   end
 
   -- [[ spellbook scan ]] --
-  local known = { earth = {}, fire = {}, water = {}, air = {} }
+  local known = { earth = {}, fire = {}, water = {}, air = {}, shield = {} }
   local byname = {}
   local effectCache = {}
 
@@ -164,7 +185,7 @@ pfUI:RegisterModule("totembar", "vanilla", function()
   end
 
   local function Scan()
-    for _, el in pairs(ELEMENTS) do known[el] = {} end
+    for _, el in pairs(GROUPS) do known[el] = {} end
     byname = {}
 
     local i = 1
@@ -173,14 +194,19 @@ pfUI:RegisterModule("totembar", "vanilla", function()
       if not name then break end
 
       local tex = GetSpellTexture(i, BOOKTYPE_SPELL)
-      local slot = TEXTURES[ShortTexture(tex)]
-      if not slot then
-        if effectCache[name] == nil then effectCache[name] = SlotByEffect(name) or false end
-        slot = effectCache[name] or nil
+      local el
+      if SHIELD_TEXTURES[ShortTexture(tex)] or SHIELD_NAMES[string.lower(name)] then
+        el = "shield"
+      else
+        local slot = TEXTURES[ShortTexture(tex)]
+        if not slot then
+          if effectCache[name] == nil then effectCache[name] = SlotByEffect(name) or false end
+          slot = effectCache[name] or nil
+        end
+        el = slot and SLOT2EL[slot]
       end
 
-      if slot then
-        local el = SLOT2EL[slot]
+      if el then
         local entry = byname[name]
         if not entry then
           entry = { name = name, element = el }
@@ -189,14 +215,14 @@ pfUI:RegisterModule("totembar", "vanilla", function()
         end
         -- spellbook lists ranks in ascending order: the last one wins
         entry.index, entry.rank, entry.icon = i, rank, tex
-        entry.range = ScanRange(i, tex)
+        if el ~= "shield" then entry.range = ScanRange(i, tex) end
       end
 
       i = i + 1
     end
 
     -- pick a sensible default the first time
-    for _, el in pairs(ELEMENTS) do
+    for _, el in pairs(GROUPS) do
       if (cfg[el] == nil or cfg[el] == "") and known[el][1] then
         cfg[el] = known[el][1].name
       end
@@ -222,18 +248,22 @@ pfUI:RegisterModule("totembar", "vanilla", function()
 
   local function Cast(entry)
     if not entry then return end
-    CastSpellByName(SpellString(entry))
+    if entry.element == "shield" then
+      CastSpellByName(SpellString(entry), 1)   -- shields always on yourself
+    else
+      CastSpellByName(SpellString(entry))
+    end
   end
 
   local function ParseOrder()
     local order, seen = {}, {}
     for el in string.gfind(string.lower(cfg.order or ""), "%a+") do
-      if SLOT[el] and not seen[el] then
+      if VALID[el] and not seen[el] then
         table.insert(order, el)
         seen[el] = true
       end
     end
-    for _, el in pairs(ELEMENTS) do
+    for _, el in pairs(GROUPS) do
       if not seen[el] then table.insert(order, el) end
     end
     return order
@@ -306,8 +336,28 @@ pfUI:RegisterModule("totembar", "vanilla", function()
     return nil
   end
 
+  -- [[ shield ]] --
+  -- charges of the shield on you, nil when it is not up
+  local function ShieldCharges(entry)
+    if C_UnitAuras and C_UnitAuras.GetAuraDataBySpellName then
+      local ok, d = pcall(C_UnitAuras.GetAuraDataBySpellName, "player", entry.name, "HELPFUL")
+      if ok then return d and (d.applications or 1) or nil end
+    end
+    local tex = entry.icon and string.lower(entry.icon)
+    for i = 1, 32 do
+      local icon, apps = UnitBuff("player", i)
+      if not icon then break end
+      if string.lower(icon) == tex then return apps or 1 end
+    end
+    return nil
+  end
+
   -- [[ cast all ]] --
   local function ShouldSkip(entry)
+    if entry.element == "shield" then
+      local charges = ShieldCharges(entry)
+      return charges and charges > (tonumber(cfg.shieldcharges) or 0)
+    end
     if cfg.skipactive ~= "1" then return nil end
     local start, duration = ActiveTotemDown(entry)
     -- missing, or another totem of this element is down: cast the active one
@@ -353,10 +403,10 @@ pfUI:RegisterModule("totembar", "vanilla", function()
     GameTooltip:AddLine(" ")
     if main then
       GameTooltip:AddDoubleLine("Left-click", "Cast " .. entry.name, 1, 1, 1, .2, 1, .8)
-      GameTooltip:AddDoubleLine("Right-click", "Pin the " .. LABEL[entry.element] .. " totem list", 1, 1, 1, .2, 1, .8)
+      GameTooltip:AddDoubleLine("Right-click", "Pin the " .. LABEL[entry.element] .. " list", 1, 1, 1, .2, 1, .8)
     else
       GameTooltip:AddDoubleLine("Left-click", "Cast", 1, 1, 1, .2, 1, .8)
-      GameTooltip:AddDoubleLine("Right-click", "Set as active " .. LABEL[entry.element] .. " totem", 1, 1, 1, .2, 1, .8)
+      GameTooltip:AddDoubleLine("Right-click", "Set as active " .. LABEL[entry.element], 1, 1, 1, .2, 1, .8)
     end
     GameTooltip:Show()
   end
@@ -448,7 +498,7 @@ pfUI:RegisterModule("totembar", "vanilla", function()
     GameTooltip:Hide()
   end
 
-  for _, el in pairs(ELEMENTS) do
+  for _, el in pairs(GROUPS) do
     local b = CreateTotemButton("pfTotemBar" .. el, bar)
     b.element = el
 
@@ -540,7 +590,7 @@ pfUI:RegisterModule("totembar", "vanilla", function()
   end
 
   function bar:Refresh()
-    for _, el in pairs(ELEMENTS) do
+    for _, el in pairs(GROUPS) do
       local b = self.buttons[el]
       local entry = GetActive(el)
       if entry then
@@ -589,7 +639,7 @@ pfUI:RegisterModule("totembar", "vanilla", function()
     local shown, prev = 0, nil
     for _, el in pairs(ParseOrder()) do
       local b = self.buttons[el]
-      if known[el][1] then
+      if known[el][1] and (el ~= "shield" or cfg.showshield == "1") then
         shown = shown + 1
         b:SetWidth(size)
         b:SetHeight(size)
@@ -642,7 +692,7 @@ pfUI:RegisterModule("totembar", "vanilla", function()
     if (this.tick or 0) > GetTime() then return end
     this.tick = GetTime() + .1
 
-    for _, el in pairs(ELEMENTS) do
+    for _, el in pairs(GROUPS) do
       local b = this.buttons[el]
       local entry = b:IsShown() and GetActive(el)
       if entry then
@@ -662,7 +712,11 @@ pfUI:RegisterModule("totembar", "vanilla", function()
         end
 
         local text = ""
-        if cfg.timer == "1" and GetTotemInfo then
+        if el == "shield" then
+          -- charges of the active shield
+          local charges = cfg.timer == "1" and ShieldCharges(entry)
+          if charges then text = "|cffffffff" .. charges .. "|r" end
+        elseif cfg.timer == "1" and GetTotemInfo then
           local active, name, tstart, tduration = GetTotemInfo(SLOT[el])
           if active and tstart then
             local remain = tstart + tduration - GetTime()
@@ -764,9 +818,12 @@ pfUI:RegisterModule("totembar", "vanilla", function()
   bar:UpdateConfig()
 
   -- [[ public API ]] --
-  local function CastElement(el)
+  -- casts unless it is still up (same rules as cast-all); force = always cast
+  local function CastElement(el, force)
     el = el and string.lower(el)
-    if SLOT[el] then Cast(GetActive(el)) end
+    if not VALID[el] then return end
+    local entry = GetActive(el)
+    if entry and (force or not ShouldSkip(entry)) then Cast(entry) end
   end
 
   local function Cycle(el, dir)
@@ -795,14 +852,15 @@ pfUI:RegisterModule("totembar", "vanilla", function()
 
   _G.pfTotemBar.CastAll = CastAll
   _G.pfTotemBar.Cast = CastElement
-  _G.pfTotemBar.Next = function(el) if SLOT[el] then Cycle(el, 1) end end
-  _G.pfTotemBar.Prev = function(el) if SLOT[el] then Cycle(el, -1) end end
+  _G.pfTotemBar.CastShield = function(force) CastElement("shield", force) end
+  _G.pfTotemBar.Next = function(el) if VALID[el] then Cycle(el, 1) end end
+  _G.pfTotemBar.Prev = function(el) if VALID[el] then Cycle(el, -1) end end
   _G.pfTotemBar.SetActive = function(el, name)
-    local entry = SLOT[el] and name and FindByName(el, name)
+    local entry = VALID[el] and name and FindByName(el, name)
     if entry then SetActive(el, entry.name) end
   end
   _G.pfTotemBar.GetActive = function(el)
-    local entry = SLOT[el] and GetActive(el)
+    local entry = VALID[el] and GetActive(el)
     return entry and entry.name
   end
 
@@ -814,19 +872,19 @@ pfUI:RegisterModule("totembar", "vanilla", function()
 
     if cmd == "all" then
       CastAll()
-    elseif SLOT[cmd] then
-      CastElement(cmd)
-    elseif (cmd == "next" or cmd == "prev") and SLOT[string.lower(rest)] then
+    elseif VALID[cmd] then
+      CastElement(cmd, string.lower(rest) == "force")
+    elseif (cmd == "next" or cmd == "prev") and VALID[string.lower(rest)] then
       Cycle(string.lower(rest), cmd == "next" and 1 or -1)
     elseif cmd == "set" then
       local _, _, el, name = string.find(rest, "^(%a+)%s+(.+)$")
       el = el and string.lower(el)
-      local entry = el and SLOT[el] and FindByName(el, name)
+      local entry = el and VALID[el] and FindByName(el, name)
       if entry then
         SetActive(el, entry.name)
         Print(LABEL[el] .. ": " .. entry.name)
       else
-        Print("unknown element or totem. Example: /totembar set fire searing")
+        Print("unknown element or spell. Examples: /totembar set fire searing, /totembar set shield water")
       end
     elseif cmd == "list" then
       for _, el in pairs(ParseOrder()) do
@@ -855,6 +913,9 @@ pfUI:RegisterModule("totembar", "vanilla", function()
           entry and (ActiveTotemDown(entry) and "yes" or "no") or "-",
           entry and (OutOfRange(entry) and "|cffff5555yes|r" or "no") or "-"))
       end
+      local sh = GetActive("shield")
+      DEFAULT_CHAT_FRAME:AddMessage(string.format("  %s: active=%s charges=%s refresh at <= %s",
+        LABEL.shield, sh and sh.name or "-", sh and tostring(ShieldCharges(sh)) or "-", tostring(cfg.shieldcharges)))
     elseif cmd == "scan" then
       Scan()
       bar:UpdateConfig()
@@ -862,7 +923,9 @@ pfUI:RegisterModule("totembar", "vanilla", function()
     else
       Print("commands:")
       DEFAULT_CHAT_FRAME:AddMessage("  /totembar all |cffaaaaaa- cast every active totem")
-      DEFAULT_CHAT_FRAME:AddMessage("  /totembar earth|fire|water|air |cffaaaaaa- cast the active totem of an element")
+      DEFAULT_CHAT_FRAME:AddMessage("  /totembar earth|fire|water|air |cffaaaaaa- cast the active totem of an element if it needs a refresh")
+      DEFAULT_CHAT_FRAME:AddMessage("  /totembar shield |cffaaaaaa- cast the active shield if it is gone / low on charges")
+      DEFAULT_CHAT_FRAME:AddMessage("  /totembar <element|shield> force |cffaaaaaa- cast it even if it is still up")
       DEFAULT_CHAT_FRAME:AddMessage("  /totembar next|prev <element> |cffaaaaaa- cycle the active totem")
       DEFAULT_CHAT_FRAME:AddMessage("  /totembar set <element> <name> |cffaaaaaa- e.g. /totembar set air windfury")
       DEFAULT_CHAT_FRAME:AddMessage("  /totembar list |cffaaaaaa- show the active totems")
@@ -904,15 +967,20 @@ pfUI:RegisterModule("totembar", "vanilla", function()
       for _, el in pairs(ELEMENTS) do
         CreateConfig(update, LABEL[el] .. " " .. T["Totem"], cfg, el, "dropdown", TotemValues(el))
       end
+      CreateConfig(update, T["Shield"], cfg, "shield", "dropdown", TotemValues("shield"))
 
       CreateConfig(nil, T["Cast All (/totembar all)"], nil, nil, "header")
-      for _, el in pairs(ELEMENTS) do
+      for _, el in pairs(GROUPS) do
         CreateConfig(update, T["Include"] .. " " .. LABEL[el], cfg, "all_" .. el, "checkbox")
       end
       CreateConfig(update, T["Cast Order (also the bar order)"], cfg, "order", nil, nil, nil, nil, "STRING")
       CreateConfig(update, T["Skip Totems That Are Still Active"], cfg, "skipactive", "checkbox")
       CreateConfig(update, T["...Unless Less Than X Seconds Left (0 = only when gone)"], cfg, "skipremain")
       CreateConfig(update, T["...Or You Are Out Of Its Range (UnitXP)"], cfg, "rangecheck", "checkbox")
+
+      CreateConfig(nil, T["Shield (/totembar shield)"], nil, nil, "header")
+      CreateConfig(update, T["Refresh At X Charges Or Less (0 = only when gone)"], cfg, "shieldcharges")
+      CreateConfig(update, T["Show Shield Button"], cfg, "showshield", "checkbox")
 
       CreateConfig(nil, T["Layout"], nil, nil, "header")
       CreateConfig(update, T["Button Size"], cfg, "size")

@@ -34,18 +34,26 @@ skip-still-active, the remaining-time threshold and the range check.
 
 Key bindings are also available under *Key Bindings → pfUI Totem Bar*.
 
+## Shield
+Pick your shield (Lightning / Water / Earth Shield) in the config or from the shield button's list.
+`/totembar shield` casts it on yourself only when it is gone, or when its charges are at or below
+the "Refresh at X charges" threshold (0 = only when gone). The button shows the remaining charges.
+It can also be included in `/totembar all`.
+
 ## Commands
 | Command | Effect |
 | --- | --- |
 | `/totembar all` | cast every active totem |
-| `/totembar earth\|fire\|water\|air` | cast the active totem of that element |
+| `/totembar earth\|fire\|water\|air` | cast the active totem of that element, if it needs a refresh |
+| `/totembar shield` | cast the active shield, if it is gone or low on charges |
+| `/totembar <element\|shield> force` | cast it even if it is still up |
 | `/totembar next\|prev <element>` | cycle the active totem of an element |
 | `/totembar set <element> <name>` | e.g. `/totembar set air windfury` |
 | `/totembar list` | print the active totems |
 | `/totembar scan` | rescan the spellbook |
 
 `/ptb` is a short alias. For scripts: `pfTotemBar.CastAll()`, `pfTotemBar.Cast("fire")`,
-`pfTotemBar.SetActive("water", "mana spring")`.
+`pfTotemBar.CastShield()`, `pfTotemBar.SetActive("water", "mana spring")`.
 
 ## Install
 Copy the `pfUI-TotemBar` folder into `Interface\AddOns`. Requires [pfUI](https://github.com/brues-code/pfUI).
