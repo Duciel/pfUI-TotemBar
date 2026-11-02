@@ -122,6 +122,11 @@ pfUI:RegisterModule("totembar", "vanilla", function()
   -- SPELL_EFFECT_SUMMON_TOTEM_SLOT1..4 -> totem slot (fallback for custom/unknown totems, needs Nampower)
   local TOTEM_EFFECTS = { [87] = 1, [88] = 2, [89] = 3, [90] = 4 }
 
+  -- "none" choice for an element: nothing is cast for it
+  local NONE = "none"
+  local NONE_ICON = "Interface\\Buttons\\UI-GroupLoot-Pass-Up"   -- red cross
+  local NONE_TEXT = "|T" .. NONE_ICON .. "|t |cffff5555" .. T["None"] .. "|r"   -- no ":" (dropdown splits on it)
+
   local function Print(msg)
     DEFAULT_CHAT_FRAME:AddMessage(PREFIX .. msg)
   end
@@ -255,6 +260,7 @@ pfUI:RegisterModule("totembar", "vanilla", function()
     local list = known[el]
     if not list or not list[1] then return nil end
     local want = cfg[el]
+    if want == NONE then return nil end
     if want and byname[want] and byname[want].element == el then
       return byname[want]
     end
@@ -432,6 +438,14 @@ pfUI:RegisterModule("totembar", "vanilla", function()
     button:SetBackdropBorderColor(GetStringColor(pfUI_config.appearance.border.color))
   end
 
+  local function ShowNoneTooltip(button, el, main)
+    GameTooltip:SetOwner(button, "ANCHOR_RIGHT")
+    GameTooltip:SetText(T["None"], 1, .33, .33)
+    GameTooltip:AddLine(main and ("No " .. LABEL[el] .. " is cast. Pick one in the list.")
+      or ("Right-click: cast no " .. LABEL[el]), 1, 1, 1)
+    GameTooltip:Show()
+  end
+
   local function ShowTooltip(button, entry, main)
     if not entry then return end
     GameTooltip:SetOwner(button, "ANCHOR_RIGHT")
@@ -467,13 +481,20 @@ pfUI:RegisterModule("totembar", "vanilla", function()
   end
 
   local function SetActive(el, name)
-    if not byname[name] or byname[name].element ~= el then return end
+    if name ~= NONE and (not byname[name] or byname[name].element ~= el) then return end
     cfg[el] = name
     bar:Refresh()
   end
 
   -- flyout buttons
   local function FlyOnClick()
+    if this.none then
+      if arg1 == "RightButton" then
+        SetActive(this.none, NONE)
+        ShowNoneTooltip(this, this.none)
+      end
+      return
+    end
     if not this.entry then return end
     if arg1 == "RightButton" then
       SetActive(this.entry.element, this.entry.name)
@@ -485,7 +506,7 @@ pfUI:RegisterModule("totembar", "vanilla", function()
 
   local function FlyOnEnter()
     this.hl:Show()
-    ShowTooltip(this, this.entry)
+    if this.none then ShowNoneTooltip(this, this.none) else ShowTooltip(this, this.entry) end
   end
 
   local function FlyOnLeave()
@@ -526,7 +547,8 @@ pfUI:RegisterModule("totembar", "vanilla", function()
       this.fly.leave = nil
       this.fly:Show()
     end
-    ShowTooltip(this, GetActive(this.element), true)
+    local entry = GetActive(this.element)
+    if entry then ShowTooltip(this, entry, true) else ShowNoneTooltip(this, this.element, true) end
   end
 
   local function MainOnLeave()
@@ -566,7 +588,9 @@ pfUI:RegisterModule("totembar", "vanilla", function()
 
   function bar:BuildFlyout(el)
     local b = self.buttons[el]
-    local fly, list, active = b.fly, known[el], GetActive(el)
+    local fly, active = b.fly, GetActive(el)
+    local list = { NONE }
+    for _, entry in pairs(known[el]) do table.insert(list, entry) end
     local size, spacing, dir = self.size, self.spacing, cfg.flyout
     local count = table.getn(list)
     local step = size + spacing
@@ -581,7 +605,9 @@ pfUI:RegisterModule("totembar", "vanilla", function()
         fly.buttons[i] = f
       end
 
-      f.entry = list[i]
+      local isNone = list[i] == NONE
+      f.entry = (not isNone) and list[i] or nil
+      f.none = isNone and el or nil
       f:SetWidth(size)
       f:SetHeight(size)
       f:ClearAllPoints()
@@ -595,8 +621,8 @@ pfUI:RegisterModule("totembar", "vanilla", function()
         f:SetPoint("BOTTOM", fly, "BOTTOM", 0, (i - 1) * step)
       end
 
-      f.icon:SetTexture(list[i].icon)
-      if list[i] == active then
+      f.icon:SetTexture(isNone and NONE_ICON or list[i].icon)
+      if (isNone and not active) or (not isNone and list[i] == active) then
         f:SetBackdropBorderColor(COLOR[el][1], COLOR[el][2], COLOR[el][3], 1)
       else
         DefaultBorder(f)
@@ -629,10 +655,18 @@ pfUI:RegisterModule("totembar", "vanilla", function()
     for _, el in pairs(GROUPS) do
       local b = self.buttons[el]
       local entry = GetActive(el)
-      if entry then
-        b.icon:SetTexture(entry.icon)
-        b:SetBackdropBorderColor(COLOR[el][1], COLOR[el][2], COLOR[el][3], 1)
+      if known[el][1] then
         b.cdstart, b.cdduration = nil, nil
+        if entry then
+          b.icon:SetTexture(entry.icon)
+          b:SetBackdropBorderColor(COLOR[el][1], COLOR[el][2], COLOR[el][3], 1)
+        else
+          b.icon:SetTexture(NONE_ICON)
+          b.icon:SetVertexColor(1, 1, 1)
+          b.timer:SetText("")
+          CooldownFrame_SetTimer(b.cd, 0, 0, 0)
+          DefaultBorder(b)
+        end
         self:BuildFlyout(el)
       end
     end
@@ -866,7 +900,8 @@ pfUI:RegisterModule("totembar", "vanilla", function()
     local list = known[el]
     local count = list and table.getn(list) or 0
     if count == 0 then return end
-    local current, idx = GetActive(el), 1
+    local current = GetActive(el)
+    local idx = current and 1 or 0
     for i = 1, count do
       if list[i] == current then idx = i end
     end
@@ -893,6 +928,7 @@ pfUI:RegisterModule("totembar", "vanilla", function()
   _G.pfTotemBar.Next = function(el) if VALID[el] then Cycle(el, 1) end end
   _G.pfTotemBar.Prev = function(el) if VALID[el] then Cycle(el, -1) end end
   _G.pfTotemBar.SetActive = function(el, name)
+    if VALID[el] and name and string.lower(name) == NONE then SetActive(el, NONE) return end
     local entry = VALID[el] and name and FindByName(el, name)
     if entry then SetActive(el, entry.name) end
   end
@@ -918,6 +954,11 @@ pfUI:RegisterModule("totembar", "vanilla", function()
     elseif cmd == "set" then
       local _, _, el, name = string.find(rest, "^(%a+)%s+(.+)$")
       el = el and string.lower(el)
+      if el and VALID[el] and name and string.lower(name) == NONE then
+        SetActive(el, NONE)
+        Print(LABEL[el] .. ": " .. T["None"])
+        return
+      end
       local entry = el and VALID[el] and FindByName(el, name)
       if entry then
         SetActive(el, entry.name)
@@ -967,7 +1008,7 @@ pfUI:RegisterModule("totembar", "vanilla", function()
       DEFAULT_CHAT_FRAME:AddMessage("  /totembar shield |cffaaaaaa- cast the active shield if it is gone / low on charges")
       DEFAULT_CHAT_FRAME:AddMessage("  /totembar <element|shield> force |cffaaaaaa- cast it even if it is still up")
       DEFAULT_CHAT_FRAME:AddMessage("  /totembar next|prev <element> |cffaaaaaa- cycle the active totem")
-      DEFAULT_CHAT_FRAME:AddMessage("  /totembar set <element> <name> |cffaaaaaa- e.g. /totembar set air windfury")
+      DEFAULT_CHAT_FRAME:AddMessage("  /totembar set <element> <name|none> |cffaaaaaa- e.g. /totembar set air windfury")
       DEFAULT_CHAT_FRAME:AddMessage("  /totembar list |cffaaaaaa- show the active totems")
       DEFAULT_CHAT_FRAME:AddMessage("  /totembar scan |cffaaaaaa- rescan the spellbook")
       DEFAULT_CHAT_FRAME:AddMessage("  /totembar debug |cffaaaaaa- show totem tracking and range info")
@@ -985,12 +1026,9 @@ pfUI:RegisterModule("totembar", "vanilla", function()
 
     local function TotemValues(el)
       return function()
-        local values = {}
+        local values = { NONE .. ":" .. NONE_TEXT }
         for _, entry in pairs(known[el]) do
           table.insert(values, entry.name .. ":" .. entry.name)
-        end
-        if not values[1] then
-          table.insert(values, ":" .. T["None"])
         end
         return values
       end

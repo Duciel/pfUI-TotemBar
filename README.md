@@ -9,7 +9,8 @@ A [pfUI](https://github.com/brues-code/pfUI) third-party module for shamans (WoW
   - **Left-click** a totem: cast it.
   - **Right-click** a totem: make it the active totem of that element.
 - Choose the active totem of each element from a dropdown in the pfUI config
-  (`/pfui` → Thirdparty → Totem Bar).
+  (`/pfui` → Thirdparty → Totem Bar). Each list also has **None** (red cross): nothing is cast
+  for that element.
 - Cooldown swipe, out-of-mana tint ([Nampower](https://github.com/brues-code/nampower)) and remaining time of the totem currently down.
 - Movable with pfUI's unlock mode; size, spacing, bar direction and list direction are configurable.
 - Always casts the highest rank you know. Totems are detected by icon (locale independent), and
@@ -49,7 +50,7 @@ It can also be included in `/totembar all`.
 | `/totembar shield` | cast the active shield, if it is gone or low on charges |
 | `/totembar <element\|shield> force` | cast it even if it is still up |
 | `/totembar next\|prev <element>` | cycle the active totem of an element |
-| `/totembar set <element> <name>` | e.g. `/totembar set air windfury` |
+| `/totembar set <element> <name\|none>` | e.g. `/totembar set air windfury` |
 | `/totembar list` | print the active totems |
 | `/totembar scan` | rescan the spellbook |
 
