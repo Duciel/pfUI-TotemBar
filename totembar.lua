@@ -17,6 +17,7 @@ BINDING_NAME_PFTOTEMBAR_FIRE = "Cast active Fire totem"
 BINDING_NAME_PFTOTEMBAR_WATER = "Cast active Water totem"
 BINDING_NAME_PFTOTEMBAR_AIR = "Cast active Air totem"
 BINDING_NAME_PFTOTEMBAR_SHIELD = "Cast active shield"
+BINDING_NAME_PFTOTEMBAR_WEAPON = "Cast active weapon enchant"
 BINDING_NAME_PFTOTEMBAR_TOTEMS = "Cast the 4 active totems (no shield)"
 
 pfUI:RegisterModule("totembar", "vanilla", function()
@@ -35,6 +36,10 @@ pfUI:RegisterModule("totembar", "vanilla", function()
     all_shield = "0",                                  -- include the shield in cast-all
     shieldcharges = "0",                               -- recast the shield at X charges or less (0 = only when gone)
     showshield = "1",                                  -- show the shield button on the bar
+    weapon     = "",                                   -- active weapon enchant (spell name)
+    all_weapon = "0",                                  -- include the weapon enchant in cast-all
+    weaponremain = "0",                                -- recast at X minutes or less left (0 = only when gone)
+    showweapon = "1",                                  -- show the weapon enchant button on the bar
     size       = "30",
     spacing    = "2",
     direction  = "HORIZONTAL",
@@ -59,6 +64,7 @@ pfUI:RegisterModule("totembar", "vanilla", function()
     _G.pfTotemBar.Cast = function() end
     _G.pfTotemBar.CastShield = function() end
     _G.pfTotemBar.CastTotems = function() end
+    _G.pfTotemBar.CastWeapon = function() end
     return
   end
 
@@ -67,18 +73,36 @@ pfUI:RegisterModule("totembar", "vanilla", function()
   local hasNampower = QueueSpellByName and true or nil
 
   local ELEMENTS = { "earth", "fire", "water", "air" }              -- totem elements
-  local GROUPS = { "earth", "fire", "water", "air", "shield" }     -- everything on the bar
-  local VALID = { earth = true, fire = true, water = true, air = true, shield = true }
+  local GROUPS = { "earth", "fire", "water", "air", "shield", "weapon" }   -- everything on the bar
+  local VALID = { earth = true, fire = true, water = true, air = true, shield = true, weapon = true }
   local SLOT = { fire = 1, earth = 2, water = 3, air = 4 }         -- same ids as pfUI's libtotem
   local SLOT2EL = { [1] = "fire", [2] = "earth", [3] = "water", [4] = "air" }
-  local LABEL = { earth = T["Earth"], fire = T["Fire"], water = T["Water"], air = T["Air"], shield = T["Shield"] }
+  local LABEL = { earth = T["Earth"], fire = T["Fire"], water = T["Water"], air = T["Air"], shield = T["Shield"], weapon = T["Weapon"] }
   local COLOR = {
     earth = { .45, .75, .2 },
     fire  = { .95, .4, .1 },
     water = { .2, .6, 1 },
     air   = { .7, .45, 1 },
     shield = { .9, .8, .2 },
+    weapon = { .85, .85, .85 },
   }
+
+  -- shaman weapon imbues: icon or name (en/fr/de)
+  local WEAPON_TEXTURES = {
+    ["spell_nature_rockbiter"] = true,         -- Rockbiter Weapon
+    ["spell_fire_flametongue"] = true,         -- Flametongue Weapon
+    ["spell_frost_frostbrand"] = true,         -- Frostbrand Weapon
+    ["spell_nature_cyclone"] = true,           -- Windfury Weapon
+  }
+  local WEAPON_NAMES = {
+    ["rockbiter weapon"] = true, ["flametongue weapon"] = true,
+    ["frostbrand weapon"] = true, ["windfury weapon"] = true,
+    ["arme croque-roc"] = true, ["arme langue de feu"] = true,
+    ["arme de givre"] = true, ["arme furie-des-vents"] = true,
+    ["waffe des felsbeißers"] = true, ["waffe der flammenzunge"] = true,
+    ["waffe des frostbrands"] = true, ["waffe des windzorns"] = true,
+  }
+  local ENCHANT_ITEM_TEMPORARY = 54
 
   -- shaman shields: icon or name (en/fr/de), checked before the totem tables
   local SHIELD_TEXTURES = {
@@ -132,7 +156,7 @@ pfUI:RegisterModule("totembar", "vanilla", function()
   end
 
   -- [[ spellbook scan ]] --
-  local known = { earth = {}, fire = {}, water = {}, air = {}, shield = {} }
+  local known = { earth = {}, fire = {}, water = {}, air = {}, shield = {}, weapon = {} }
   local byname = {}
   local effectCache = {}
 
@@ -219,8 +243,13 @@ pfUI:RegisterModule("totembar", "vanilla", function()
 
       local tex = GetSpellTexture(i, BOOKTYPE_SPELL)
       local el
-      if SHIELD_TEXTURES[ShortTexture(tex)] or SHIELD_NAMES[string.lower(name)] then
+      local short, lname = ShortTexture(tex), string.lower(name)
+      if collection[i] then
+        el = nil   -- mounts / companions / toys are never shaman spells
+      elseif SHIELD_TEXTURES[short] or SHIELD_NAMES[lname] then
         el = "shield"
+      elseif WEAPON_TEXTURES[short] or WEAPON_NAMES[lname] then
+        el = "weapon"
       else
         -- spell data first (companions and toys can reuse totem icons),
         -- the icon table only when the spell data can't be read
@@ -242,7 +271,24 @@ pfUI:RegisterModule("totembar", "vanilla", function()
         end
         -- spellbook lists ranks in ascending order: the last one wins
         entry.index, entry.rank, entry.icon = i, rank, tex
-        if el ~= "shield" then entry.range = ScanRange(i, tex) end
+        if SLOT[el] then entry.range = ScanRange(i, tex) end
+        if el == "weapon" then
+          -- enchant ids applied by every rank (Nampower), to recognise it on the weapon
+          entry.enchants = entry.enchants or {}
+          if GetSpellIdForName and GetSpellRecField then
+            local query = (rank and rank ~= "") and (name .. "(" .. rank .. ")") or name
+            local okId, id = pcall(GetSpellIdForName, query)
+            if okId and id and id ~= 0 then
+              local okE, effects = pcall(GetSpellRecField, id, "effect")
+              local okM, misc = pcall(GetSpellRecField, id, "effectMiscValue")
+              if okE and okM and type(effects) == "table" and type(misc) == "table" then
+                for k, effect in pairs(effects) do
+                  if effect == ENCHANT_ITEM_TEMPORARY and misc[k] then entry.enchants[misc[k]] = true end
+                end
+              end
+            end
+          end
+        end
       end
 
       i = i + 1
@@ -380,11 +426,36 @@ pfUI:RegisterModule("totembar", "vanilla", function()
     return nil
   end
 
+  -- [[ weapon enchant ]] --
+  -- seconds left on the main hand enchant when it is the given imbue,
+  -- nil when the weapon has no enchant or a different one
+  local function WeaponEnchantLeft(entry)
+    if GetEquippedItem then
+      local ok, item = pcall(GetEquippedItem, "player", 16)
+      if not ok then item = nil end
+      if not item or not item.tempEnchantId or item.tempEnchantId == 0 then return nil end
+      local id, left = item.tempEnchantId, (item.tempEnchantmentTimeLeftMs or 0) / 1000
+      if entry.enchants and next(entry.enchants) then
+        return entry.enchants[id] and left or nil
+      end
+      return left   -- spell data unreadable: any enchant counts
+    end
+    -- without Nampower: any main hand enchant counts as ours
+    if GetWeaponEnchantInfo then
+      local hasMain, expiration = GetWeaponEnchantInfo()
+      if hasMain then return (expiration or 0) / 1000 end
+    end
+    return nil
+  end
+
   -- [[ cast all ]] --
   local function ShouldSkip(entry)
     if entry.element == "shield" then
       local charges = ShieldCharges(entry)
       return charges and charges > (tonumber(cfg.shieldcharges) or 0)
+    elseif entry.element == "weapon" then
+      local left = WeaponEnchantLeft(entry)
+      return left and left > (tonumber(cfg.weaponremain) or 0) * 60
     end
     if cfg.skipactive ~= "1" then return nil end
     local start, duration = ActiveTotemDown(entry)
@@ -710,7 +781,8 @@ pfUI:RegisterModule("totembar", "vanilla", function()
     local shown, prev = 0, nil
     for _, el in pairs(ParseOrder()) do
       local b = self.buttons[el]
-      if known[el][1] and (el ~= "shield" or cfg.showshield == "1") then
+      if known[el][1] and (el ~= "shield" or cfg.showshield == "1")
+        and (el ~= "weapon" or cfg.showweapon == "1") then
         shown = shown + 1
         b:SetWidth(size)
         b:SetHeight(size)
@@ -787,6 +859,9 @@ pfUI:RegisterModule("totembar", "vanilla", function()
           -- charges of the active shield
           local charges = cfg.timer == "1" and ShieldCharges(entry)
           if charges then text = "|cffffffff" .. charges .. "|r" end
+        elseif el == "weapon" then
+          local left = cfg.timer == "1" and WeaponEnchantLeft(entry)
+          if left and left > 0 then text = "|cffffffff" .. FormatTime(left) .. "|r" end
         elseif cfg.timer == "1" and GetTotemInfo then
           local active, name, tstart, tduration = GetTotemInfo(SLOT[el])
           if active and tstart then
@@ -926,6 +1001,7 @@ pfUI:RegisterModule("totembar", "vanilla", function()
   _G.pfTotemBar.Cast = CastElement
   _G.pfTotemBar.CastShield = function(force) CastElement("shield", force) end
   _G.pfTotemBar.CastTotems = CastTotems
+  _G.pfTotemBar.CastWeapon = function(force) CastElement("weapon", force) end
   _G.pfTotemBar.Next = function(el) if VALID[el] then Cycle(el, 1) end end
   _G.pfTotemBar.Prev = function(el) if VALID[el] then Cycle(el, -1) end end
   _G.pfTotemBar.SetActive = function(el, name)
@@ -997,6 +1073,13 @@ pfUI:RegisterModule("totembar", "vanilla", function()
       local sh = GetActive("shield")
       DEFAULT_CHAT_FRAME:AddMessage(string.format("  %s: active=%s charges=%s refresh at <= %s",
         LABEL.shield, sh and sh.name or "-", sh and tostring(ShieldCharges(sh)) or "-", tostring(cfg.shieldcharges)))
+      local wp = GetActive("weapon")
+      local mh = GetEquippedItem and GetEquippedItem("player", 16)
+      local ids = ""
+      if wp and wp.enchants then for id in pairs(wp.enchants) do ids = ids .. id .. " " end end
+      DEFAULT_CHAT_FRAME:AddMessage(string.format("  %s: active=%s ids=%s | weapon enchant=%s left=%s | refresh at <= %s min",
+        LABEL.weapon, wp and wp.name or "-", ids ~= "" and ids or "-",
+        mh and tostring(mh.tempEnchantId) or "-", wp and tostring(WeaponEnchantLeft(wp)) or "-", tostring(cfg.weaponremain)))
     elseif cmd == "scan" then
       Scan()
       bar:UpdateConfig()
@@ -1007,6 +1090,7 @@ pfUI:RegisterModule("totembar", "vanilla", function()
       DEFAULT_CHAT_FRAME:AddMessage("  /totembar totems [force] |cffaaaaaa- cast the 4 active totems that need a refresh (no shield)")
       DEFAULT_CHAT_FRAME:AddMessage("  /totembar earth|fire|water|air |cffaaaaaa- cast the active totem of an element if it needs a refresh")
       DEFAULT_CHAT_FRAME:AddMessage("  /totembar shield |cffaaaaaa- cast the active shield if it is gone / low on charges")
+      DEFAULT_CHAT_FRAME:AddMessage("  /totembar weapon |cffaaaaaa- cast the active weapon enchant if it is gone / about to expire")
       DEFAULT_CHAT_FRAME:AddMessage("  /totembar <element|shield> force |cffaaaaaa- cast it even if it is still up")
       DEFAULT_CHAT_FRAME:AddMessage("  /totembar next|prev <element> |cffaaaaaa- cycle the active totem")
       DEFAULT_CHAT_FRAME:AddMessage("  /totembar set <element> <name|none> |cffaaaaaa- e.g. /totembar set air windfury")
@@ -1048,6 +1132,7 @@ pfUI:RegisterModule("totembar", "vanilla", function()
         CreateConfig(update, LABEL[el] .. " " .. T["Totem"], cfg, el, "dropdown", TotemValues(el))
       end
       CreateConfig(update, T["Shield"], cfg, "shield", "dropdown", TotemValues("shield"))
+      CreateConfig(update, T["Weapon Enchant"], cfg, "weapon", "dropdown", TotemValues("weapon"))
 
       CreateConfig(nil, T["Cast All (/totembar all)"], nil, nil, "header")
       for _, el in pairs(GROUPS) do
@@ -1061,6 +1146,10 @@ pfUI:RegisterModule("totembar", "vanilla", function()
       CreateConfig(nil, T["Shield (/totembar shield)"], nil, nil, "header")
       CreateConfig(update, T["Refresh At X Charges Or Less (0 = only when gone)"], cfg, "shieldcharges")
       CreateConfig(update, T["Show Shield Button"], cfg, "showshield", "checkbox")
+
+      CreateConfig(nil, T["Weapon Enchant (/totembar weapon)"], nil, nil, "header")
+      CreateConfig(update, T["Refresh At X Minutes Or Less Left (0 = only when gone)"], cfg, "weaponremain")
+      CreateConfig(update, T["Show Weapon Enchant Button"], cfg, "showweapon", "checkbox")
 
       CreateConfig(nil, T["Layout"], nil, nil, "header")
       CreateConfig(update, T["Button Size"], cfg, "size")

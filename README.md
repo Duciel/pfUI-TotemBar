@@ -41,12 +41,20 @@ Pick your shield (Lightning / Water / Earth Shield) in the config or from the sh
 the "Refresh at X charges" threshold (0 = only when gone). The button shows the remaining charges.
 It can also be included in `/totembar all`.
 
+## Weapon enchant
+Pick Rockbiter / Flametongue / Frostbrand / Windfury Weapon in the config or from the weapon
+button's list. `/totembar weapon` casts it only when your main hand has no enchant, a different
+one, or less than the "Refresh at X minutes" threshold left (0 = only when gone). With Nampower
+the enchant on the weapon is recognised exactly; without it any main hand enchant counts.
+The button shows the time left. It can also be included in `/totembar all`.
+
 ## Commands
 | Command | Effect |
 | --- | --- |
 | `/totembar all` | cast every active totem |
 | `/totembar earth\|fire\|water\|air` | cast the active totem of that element, if it needs a refresh |
 | `/totembar totems` | cast the 4 active totems that need a refresh, never the shield (`force` = all 4) |
+| `/totembar weapon` | cast the active weapon enchant, if it is gone or about to expire |
 | `/totembar shield` | cast the active shield, if it is gone or low on charges |
 | `/totembar <element\|shield> force` | cast it even if it is still up |
 | `/totembar next\|prev <element>` | cycle the active totem of an element |
@@ -55,7 +63,7 @@ It can also be included in `/totembar all`.
 | `/totembar scan` | rescan the spellbook |
 
 `/ptb` is a short alias. For scripts: `pfTotemBar.CastAll()`, `pfTotemBar.Cast("fire")`,
-`pfTotemBar.CastTotems()`, `pfTotemBar.CastShield()`, `pfTotemBar.SetActive("water", "mana spring")`.
+`pfTotemBar.CastTotems()`, `pfTotemBar.CastShield()`, `pfTotemBar.CastWeapon()`, `pfTotemBar.SetActive("water", "mana spring")`.
 
 ## Install
 Copy the `pfUI-TotemBar` folder into `Interface\AddOns`. Requires [pfUI](https://github.com/brues-code/pfUI).
