@@ -16,6 +16,15 @@ A [pfUI](https://github.com/brues-code/pfUI) third-party module for shamans (WoW
 - Always casts the highest rank you know. Totems are detected by icon (locale independent), and
   with [Nampower](https://github.com/brues-code/nampower) also by spell effect, so custom server totems show up too.
 
+## Secondary totem
+For totems with a cooldown, **middle-click** another totem of the same element in the button's
+list to make it the secondary (middle-click it again to remove it). While the primary is on
+cooldown (the 1.5s global cooldown is ignored) the button and every command cast the secondary;
+as soon as the primary is ready it is cast again. Commands do nothing while the primary (or the
+secondary, during the cooldown) is still active; a left-click on the button always casts. The
+button shows the totem that will be cast, a small corner icon shows the secondary (outlined when
+it is the one cast) and the cooldown wheel stays on the primary. Saved in the pfUI config.
+
 ## Cast every active totem from one macro
 ```
 /totembar all

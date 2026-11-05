@@ -45,6 +45,7 @@ pfUI:RegisterModule("totembar", "vanilla", function()
     all_relic  = "0",                                  -- include the totem item swap in cast-all
     showrelic  = "1",                                  -- show the totem item button on the bar
     reverse    = "0",                                  -- reverse the button order on the bar
+    sec_earth  = "", sec_fire = "", sec_water = "", sec_air = "",   -- secondary totem per element
     enable_shield = "1",                               -- shield feature on/off
     enable_weapon = "1",                               -- weapon enchant feature on/off
     enable_relic  = "1",                               -- totem item swap feature on/off
@@ -577,6 +578,44 @@ pfUI:RegisterModule("totembar", "vanilla", function()
     return remain > (tonumber(cfg.skipremain) or 0)
   end
 
+  -- [[ secondary totem ]] --
+  -- used while the primary totem of the element is on cooldown
+  local function GetSecondary(el)
+    if not SLOT[el] then return nil end
+    local want = cfg["sec_" .. el]
+    local entry = want and want ~= "" and byname[want]
+    if entry and entry.element == el and entry ~= GetActive(el) then return entry end
+    return nil
+  end
+
+  -- real cooldown only: 1.5s or less is the global cooldown
+  local function OnCooldown(entry)
+    local start, duration = GetSpellCooldown(entry.index, BOOKTYPE_SPELL)
+    return start and start > 0 and duration and duration > 1.5
+  end
+
+  -- the totem a click casts: the primary when ready, else the secondary
+  local function Effective(el)
+    local primary = GetActive(el)
+    if primary and SLOT[el] and OnCooldown(primary) then
+      return GetSecondary(el) or primary
+    end
+    return primary
+  end
+
+  -- what a command casts for an element (nil = nothing):
+  -- primary still active -> nothing; else primary if ready, otherwise the
+  -- secondary (unless the secondary is already active). force = Effective
+  local function ToCast(el, force)
+    local primary = GetActive(el)
+    if not primary then return nil end
+    if force then return Effective(el) end
+    if ShouldSkip(primary) then return nil end
+    local entry = Effective(el)
+    if entry ~= primary and ShouldSkip(entry) then return nil end
+    return entry
+  end
+
   -- totemsOnly: the 4 totems (ignores the cast-all include boxes), no shield
   local function BuildCastList(totemsOnly, force)
     local list = {}
@@ -584,10 +623,8 @@ pfUI:RegisterModule("totembar", "vanilla", function()
       local wanted
       if totemsOnly then wanted = SLOT[el] else wanted = cfg["all_" .. el] == "1" end
       if wanted and Enabled(el) then
-        local entry = GetActive(el)
-        if entry and (force or not ShouldSkip(entry)) then
-          table.insert(list, entry)
-        end
+        local entry = ToCast(el, force)
+        if entry then table.insert(list, entry) end
       end
     end
     return list
@@ -645,6 +682,10 @@ pfUI:RegisterModule("totembar", "vanilla", function()
       GameTooltip:AddDoubleLine("Right-click", "Pin the " .. LABEL[entry.element] .. " list", 1, 1, 1, .2, 1, .8)
     else
       GameTooltip:AddDoubleLine("Left-click", verb, 1, 1, 1, .2, 1, .8)
+      if SLOT[entry.element] and entry ~= GetActive(entry.element) then
+        GameTooltip:AddDoubleLine("Middle-click", (GetSecondary(entry.element) == entry) and "Remove secondary"
+          or "Set as secondary (while the active one is on cooldown)", 1, 1, 1, .2, 1, .8)
+      end
       GameTooltip:AddDoubleLine("Right-click", "Set as active " .. LABEL[entry.element], 1, 1, 1, .2, 1, .8)
     end
     GameTooltip:Show()
@@ -665,7 +706,7 @@ pfUI:RegisterModule("totembar", "vanilla", function()
     b.hl:SetTexture(1, 1, 1, .2)
     b.hl:Hide()
 
-    b:RegisterForClicks("LeftButtonUp", "RightButtonUp")
+    b:RegisterForClicks("LeftButtonUp", "RightButtonUp", "MiddleButtonUp")
     return b
   end
 
@@ -685,7 +726,13 @@ pfUI:RegisterModule("totembar", "vanilla", function()
       return
     end
     if not this.entry then return end
-    if arg1 == "RightButton" then
+    if arg1 == "MiddleButton" then
+      local el = this.entry.element
+      if not SLOT[el] or this.entry == GetActive(el) then return end
+      if GetSecondary(el) == this.entry then cfg["sec_" .. el] = "" else cfg["sec_" .. el] = this.entry.name end
+      bar:Refresh()
+      ShowTooltip(this, this.entry)
+    elseif arg1 == "RightButton" then
       SetActive(this.entry.element, this.entry.name)
       ShowTooltip(this, this.entry)
     else
@@ -725,8 +772,8 @@ pfUI:RegisterModule("totembar", "vanilla", function()
         fly.leave = nil
         fly:Show()
       end
-    else
-      Cast(GetActive(this.element))
+    elseif arg1 ~= "MiddleButton" then
+      Cast(Effective(this.element))
     end
   end
 
@@ -736,7 +783,7 @@ pfUI:RegisterModule("totembar", "vanilla", function()
       this.fly.leave = nil
       this.fly:Show()
     end
-    local entry = GetActive(this.element)
+    local entry = Effective(this.element)
     if entry then ShowTooltip(this, entry, true) else ShowNoneTooltip(this, this.element, true) end
   end
 
@@ -760,6 +807,19 @@ pfUI:RegisterModule("totembar", "vanilla", function()
     b.timer = b.textframe:CreateFontString(nil, "OVERLAY")
     b.timer:SetFont(pfUI.font_default, C.global.font_size, "OUTLINE")
     b.timer:SetPoint("BOTTOM", b, "BOTTOM", 0, 3)
+
+    if SLOT[el] then
+      -- small corner icon: the secondary totem, outlined while it is the one cast
+      b.secframe = CreateFrame("Frame", nil, b.textframe)
+      b.secframe:SetPoint("TOPRIGHT", b, "TOPRIGHT", -1, -1)
+      b.secframe:SetWidth(12)
+      b.secframe:SetHeight(12)
+      CreateBackdrop(b.secframe, nil, true)
+      b.secframe.icon = b.secframe:CreateTexture(nil, "OVERLAY")
+      b.secframe.icon:SetTexCoord(.08, .92, .08, .92)
+      SetAllPointsOffset(b.secframe.icon, b.secframe, 1)
+      b.secframe:Hide()
+    end
 
     b:SetScript("OnClick", MainOnClick)
     b:SetScript("OnEnter", MainOnEnter)
@@ -848,9 +908,12 @@ pfUI:RegisterModule("totembar", "vanilla", function()
       if known[el][1] then
         b.cdstart, b.cdduration = nil, nil
         if entry then
-          b.icon:SetTexture(entry.icon)
+          local eff = Effective(el) or entry
+          b.icon:SetTexture(eff.icon)
+          b.showing = eff
           b:SetBackdropBorderColor(COLOR[el][1], COLOR[el][2], COLOR[el][3], 1)
         else
+          if b.secframe then b.secframe:Hide() end
           b.icon:SetTexture(NONE_ICON)
           b.icon:SetVertexColor(1, 1, 1)
           b.timer:SetText("")
@@ -912,6 +975,11 @@ pfUI:RegisterModule("totembar", "vanilla", function()
         b:SetHeight(size)
         b.cdbg:SetWidth(size - 3)
         b.cdbg:SetHeight(size - 3)
+        if b.secframe then
+          local corner = math.floor(size * .42 + .5)
+          b.secframe:SetWidth(corner)
+          b.secframe:SetHeight(corner)
+        end
         b:ClearAllPoints()
         if not prev then
           b:SetPoint("TOPLEFT", self, "TOPLEFT", spacing, -spacing)
@@ -973,14 +1041,39 @@ pfUI:RegisterModule("totembar", "vanilla", function()
         end
         b.timer:SetText("")
       elseif entry then
+        -- the cooldown wheel stays on the primary
         local start, duration, enable = GetSpellCooldown(entry.index, BOOKTYPE_SPELL)
         if start ~= b.cdstart or duration ~= b.cdduration then
           b.cdstart, b.cdduration = start, duration
           CooldownFrame_SetTimer(b.cd, start, duration, enable)
         end
 
+        -- icon: the totem that will really be cast
+        local eff = Effective(el) or entry
+        if b.showing ~= eff then
+          b.showing = eff
+          b.icon:SetTexture(eff.icon)
+        end
+
+        local sec = GetSecondary(el)
+        if b.secframe then
+          if sec then
+            b.secframe.icon:SetTexture(sec.icon)
+            if eff == sec then
+              b.secframe:SetBackdropBorderColor(COLOR[el][1], COLOR[el][2], COLOR[el][3], 1)
+              b.secframe.icon:SetVertexColor(1, 1, 1)
+            else
+              DefaultBorder(b.secframe)
+              b.secframe.icon:SetVertexColor(.5, .5, .5)
+            end
+            b.secframe:Show()
+          else
+            b.secframe:Hide()
+          end
+        end
+
         if IsSpellUsable then
-          local usable, oom = IsSpellUsable(entry.name)
+          local usable, oom = IsSpellUsable(eff.name)
           if usable == 0 and oom == 1 then
             b.icon:SetVertexColor(.4, .5, 1)
           else
@@ -1004,8 +1097,9 @@ pfUI:RegisterModule("totembar", "vanilla", function()
               -- white when your active totem is down, grey when another one is
               -- white: your active totem, red: out of range, grey: another totem
               local color = "|cffaaaaaa"
-              if ActiveTotemDown(entry) then
-                color = OutOfRange(entry) and "|cffff5555" or "|cffffffff"
+              local down = (ActiveTotemDown(entry) and entry) or (sec and ActiveTotemDown(sec) and sec)
+              if down then
+                color = OutOfRange(down) and "|cffff5555" or "|cffffffff"
               end
               text = color .. FormatTime(remain) .. "|r"
             end
@@ -1114,8 +1208,8 @@ pfUI:RegisterModule("totembar", "vanilla", function()
   local function CastElement(el, force)
     el = el and string.lower(el)
     if not VALID[el] or not Enabled(el) then return end
-    local entry = GetActive(el)
-    if entry and (force or not ShouldSkip(entry)) then Cast(entry) end
+    local entry = ToCast(el, force)
+    if entry then Cast(entry) end
   end
 
   local function Cycle(el, dir)
@@ -1217,6 +1311,15 @@ pfUI:RegisterModule("totembar", "vanilla", function()
           tostring(guid), dist and string.format("%.1f", dist) or "-",
           entry and (ActiveTotemDown(entry) and "yes" or "no") or "-",
           entry and (OutOfRange(entry) and "|cffff5555yes|r" or "no") or "-"))
+      end
+      for _, el in pairs(ELEMENTS) do
+        local sec = GetSecondary(el)
+        local primary = GetActive(el)
+        if sec then
+          DEFAULT_CHAT_FRAME:AddMessage(string.format("  %s secondary: %s | primary on cooldown=%s | next cast=%s",
+            LABEL[el], sec.name, primary and (OnCooldown(primary) and "yes" or "no") or "-",
+            (Effective(el) or {}).name or "-"))
+        end
       end
       local sh = GetActive("shield")
       DEFAULT_CHAT_FRAME:AddMessage(string.format("  %s: active=%s charges=%s refresh at <= %s",
