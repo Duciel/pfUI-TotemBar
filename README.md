@@ -48,6 +48,15 @@ one, or less than the "Refresh at X minutes" threshold left (0 = only when gone)
 the enchant on the weapon is recognised exactly; without it any main hand enchant counts.
 The button shows the time left. It can also be included in `/totembar all`.
 
+## Totem item swap
+The totem items you carry (equipped in the relic slot or in your bags) are listed in the
+"Totem Item" dropdown and on the totem item button. `/totembar relic` (or `/totembar item`)
+equips the active one if it isn't already equipped. Librams, idols and other items are ignored.
+
+## Turning features off
+Shield, weapon enchant and totem item swap each have an **Enable** checkbox in the config.
+Disabled, the button is hidden, its command does nothing and it is left out of `/totembar all`.
+
 ## Commands
 | Command | Effect |
 | --- | --- |
@@ -55,6 +64,7 @@ The button shows the time left. It can also be included in `/totembar all`.
 | `/totembar earth\|fire\|water\|air` | cast the active totem of that element, if it needs a refresh |
 | `/totembar totems` | cast the 4 active totems that need a refresh, never the shield (`force` = all 4) |
 | `/totembar weapon` | cast the active weapon enchant, if it is gone or about to expire |
+| `/totembar relic` (or `item`) | equip the active totem item |
 | `/totembar shield` | cast the active shield, if it is gone or low on charges |
 | `/totembar <element\|shield> force` | cast it even if it is still up |
 | `/totembar next\|prev <element>` | cycle the active totem of an element |
@@ -63,7 +73,7 @@ The button shows the time left. It can also be included in `/totembar all`.
 | `/totembar scan` | rescan the spellbook |
 
 `/ptb` is a short alias. For scripts: `pfTotemBar.CastAll()`, `pfTotemBar.Cast("fire")`,
-`pfTotemBar.CastTotems()`, `pfTotemBar.CastShield()`, `pfTotemBar.CastWeapon()`, `pfTotemBar.SetActive("water", "mana spring")`.
+`pfTotemBar.CastTotems()`, `pfTotemBar.CastShield()`, `pfTotemBar.CastWeapon()`, `pfTotemBar.EquipRelic()`, `pfTotemBar.SetActive("water", "mana spring")`.
 
 ## Install
 Copy the `pfUI-TotemBar` folder into `Interface\AddOns`. Requires [pfUI](https://github.com/brues-code/pfUI).

@@ -18,6 +18,7 @@ BINDING_NAME_PFTOTEMBAR_WATER = "Cast active Water totem"
 BINDING_NAME_PFTOTEMBAR_AIR = "Cast active Air totem"
 BINDING_NAME_PFTOTEMBAR_SHIELD = "Cast active shield"
 BINDING_NAME_PFTOTEMBAR_WEAPON = "Cast active weapon enchant"
+BINDING_NAME_PFTOTEMBAR_RELIC = "Equip active totem item"
 BINDING_NAME_PFTOTEMBAR_TOTEMS = "Cast the 4 active totems (no shield)"
 
 pfUI:RegisterModule("totembar", "vanilla", function()
@@ -40,6 +41,12 @@ pfUI:RegisterModule("totembar", "vanilla", function()
     all_weapon = "0",                                  -- include the weapon enchant in cast-all
     weaponremain = "0",                                -- recast at X minutes or less left (0 = only when gone)
     showweapon = "1",                                  -- show the weapon enchant button on the bar
+    relic      = "",                                   -- active totem item (relic slot), item name
+    all_relic  = "0",                                  -- include the totem item swap in cast-all
+    showrelic  = "1",                                  -- show the totem item button on the bar
+    enable_shield = "1",                               -- shield feature on/off
+    enable_weapon = "1",                               -- weapon enchant feature on/off
+    enable_relic  = "1",                               -- totem item swap feature on/off
     size       = "30",
     spacing    = "2",
     direction  = "HORIZONTAL",
@@ -65,6 +72,7 @@ pfUI:RegisterModule("totembar", "vanilla", function()
     _G.pfTotemBar.CastShield = function() end
     _G.pfTotemBar.CastTotems = function() end
     _G.pfTotemBar.CastWeapon = function() end
+    _G.pfTotemBar.EquipRelic = function() end
     return
   end
 
@@ -73,11 +81,20 @@ pfUI:RegisterModule("totembar", "vanilla", function()
   local hasNampower = QueueSpellByName and true or nil
 
   local ELEMENTS = { "earth", "fire", "water", "air" }              -- totem elements
-  local GROUPS = { "earth", "fire", "water", "air", "shield", "weapon" }   -- everything on the bar
-  local VALID = { earth = true, fire = true, water = true, air = true, shield = true, weapon = true }
+  local GROUPS = { "earth", "fire", "water", "air", "shield", "weapon", "relic" }   -- everything on the bar
+  local VALID = { earth = true, fire = true, water = true, air = true, shield = true, weapon = true, relic = true }
+  local RELIC_SLOT = 18   -- ranged slot, used as relic slot
+
+  -- optional features that can be switched off in the config
+  local function Enabled(el)
+    if el == "shield" or el == "weapon" or el == "relic" then
+      return cfg["enable_" .. el] == "1"
+    end
+    return true
+  end
   local SLOT = { fire = 1, earth = 2, water = 3, air = 4 }         -- same ids as pfUI's libtotem
   local SLOT2EL = { [1] = "fire", [2] = "earth", [3] = "water", [4] = "air" }
-  local LABEL = { earth = T["Earth"], fire = T["Fire"], water = T["Water"], air = T["Air"], shield = T["Shield"], weapon = T["Weapon"] }
+  local LABEL = { earth = T["Earth"], fire = T["Fire"], water = T["Water"], air = T["Air"], shield = T["Shield"], weapon = T["Weapon"], relic = T["Totem Item"] }
   local COLOR = {
     earth = { .45, .75, .2 },
     fire  = { .95, .4, .1 },
@@ -85,6 +102,7 @@ pfUI:RegisterModule("totembar", "vanilla", function()
     air   = { .7, .45, 1 },
     shield = { .9, .8, .2 },
     weapon = { .85, .85, .85 },
+    relic  = { .6, .4, .2 },
   }
 
   -- shaman weapon imbues: icon or name (en/fr/de)
@@ -156,7 +174,7 @@ pfUI:RegisterModule("totembar", "vanilla", function()
   end
 
   -- [[ spellbook scan ]] --
-  local known = { earth = {}, fire = {}, water = {}, air = {}, shield = {}, weapon = {} }
+  local known = { earth = {}, fire = {}, water = {}, air = {}, shield = {}, weapon = {}, relic = {} }
   local byname = {}
   local effectCache = {}
 
@@ -215,6 +233,90 @@ pfUI:RegisterModule("totembar", "vanilla", function()
       end
     end
     return DEFAULT_RANGE
+  end
+
+  -- [[ totem items (relic slot) ]] --
+  local relicCache = {}
+
+  local function ItemIdFromLink(link)
+    local _, _, id = string.find(link or "", "item:(%d+)")
+    return tonumber(id)
+  end
+
+  local function ItemNameFromLink(link)
+    local _, _, name = string.find(link or "", "%[(.+)%]")
+    return name
+  end
+
+  -- a shaman totem relic: Nampower item data first, GetItemInfo's equip slot otherwise
+  local function IsTotemRelic(id)
+    if relicCache[id] ~= nil then return relicCache[id] end
+    local result
+    if GetItemStatsField then
+      local ok, inv = pcall(GetItemStatsField, id, "inventoryType")
+      if ok and inv then
+        local okSub, sub = pcall(GetItemStatsField, id, "subclass")
+        result = inv == 28 and (not okSub or sub == nil or sub == 9)   -- relic, armor subclass totem
+      end
+    end
+    if result == nil then
+      local info = { GetItemInfo(id) }
+      for k = 1, 12 do
+        if info[k] == "INVTYPE_RELIC" then result = true end
+      end
+      if result == nil and info[1] then result = false end
+      if result == nil then return false end   -- not cached yet, retry later
+    end
+    relicCache[id] = result
+    return result
+  end
+
+  local function ScanRelics()
+    for _, entry in pairs(known.relic) do
+      if byname[entry.name] == entry then byname[entry.name] = nil end
+    end
+    known.relic = {}
+
+    local function add(link, icon, bag, slot)
+      local id = ItemIdFromLink(link)
+      local name = ItemNameFromLink(link)
+      if not id or not name or byname[name] or not IsTotemRelic(id) then return end
+      local entry = { name = name, element = "relic", itemId = id, icon = icon, bag = bag, slot = slot, equipped = not bag }
+      byname[name] = entry
+      table.insert(known.relic, entry)
+    end
+
+    -- equipped one first
+    add(GetInventoryItemLink("player", RELIC_SLOT), GetInventoryItemTexture("player", RELIC_SLOT))
+    for bag = 0, 4 do
+      for slot = 1, GetContainerNumSlots(bag) or 0 do
+        local link = GetContainerItemLink(bag, slot)
+        if link then
+          local icon = GetContainerItemInfo(bag, slot)
+          add(link, icon, bag, slot)
+        end
+      end
+    end
+  end
+
+  local function EquippedRelicId()
+    return ItemIdFromLink(GetInventoryItemLink("player", RELIC_SLOT))
+  end
+
+  local function EquipRelic(entry)
+    if not entry or EquippedRelicId() == entry.itemId then return end
+    if CursorHasItem and CursorHasItem() then return end
+    -- the item may have moved since the last scan
+    for bag = 0, 4 do
+      for slot = 1, GetContainerNumSlots(bag) or 0 do
+        if ItemIdFromLink(GetContainerItemLink(bag, slot)) == entry.itemId then
+          PickupContainerItem(bag, slot)
+          EquipCursorItem(RELIC_SLOT)
+          if CursorHasItem and CursorHasItem() then ClearCursor() end   -- refused (e.g. combat)
+          return
+        end
+      end
+    end
   end
 
   local function Scan()
@@ -294,6 +396,8 @@ pfUI:RegisterModule("totembar", "vanilla", function()
       i = i + 1
     end
 
+    ScanRelics()
+
     -- pick a sensible default the first time
     for _, el in pairs(GROUPS) do
       if (cfg[el] == nil or cfg[el] == "") and known[el][1] then
@@ -310,6 +414,8 @@ pfUI:RegisterModule("totembar", "vanilla", function()
     if want and byname[want] and byname[want].element == el then
       return byname[want]
     end
+    -- a totem item we no longer carry: don't swap to some other item
+    if el == "relic" and want and want ~= "" then return nil end
     return list[1]
   end
 
@@ -322,7 +428,9 @@ pfUI:RegisterModule("totembar", "vanilla", function()
 
   local function Cast(entry)
     if not entry then return end
-    if entry.element == "shield" then
+    if entry.element == "relic" then
+      EquipRelic(entry)
+    elseif entry.element == "shield" then
       CastSpellByName(SpellString(entry), 1)   -- shields always on yourself
     else
       CastSpellByName(SpellString(entry))
@@ -453,6 +561,8 @@ pfUI:RegisterModule("totembar", "vanilla", function()
     if entry.element == "shield" then
       local charges = ShieldCharges(entry)
       return charges and charges > (tonumber(cfg.shieldcharges) or 0)
+    elseif entry.element == "relic" then
+      return EquippedRelicId() == entry.itemId
     elseif entry.element == "weapon" then
       local left = WeaponEnchantLeft(entry)
       return left and left > (tonumber(cfg.weaponremain) or 0) * 60
@@ -472,7 +582,7 @@ pfUI:RegisterModule("totembar", "vanilla", function()
     for _, el in pairs(ParseOrder()) do
       local wanted
       if totemsOnly then wanted = SLOT[el] else wanted = cfg["all_" .. el] == "1" end
-      if wanted then
+      if wanted and Enabled(el) then
         local entry = GetActive(el)
         if entry and (force or not ShouldSkip(entry)) then
           table.insert(list, entry)
@@ -520,13 +630,20 @@ pfUI:RegisterModule("totembar", "vanilla", function()
   local function ShowTooltip(button, entry, main)
     if not entry then return end
     GameTooltip:SetOwner(button, "ANCHOR_RIGHT")
-    GameTooltip:SetSpell(entry.index, BOOKTYPE_SPELL)
+    local verb = "Cast"
+    if entry.element == "relic" then
+      verb = "Equip"
+      if entry.equipped then GameTooltip:SetInventoryItem("player", RELIC_SLOT)
+      else GameTooltip:SetBagItem(entry.bag, entry.slot) end
+    else
+      GameTooltip:SetSpell(entry.index, BOOKTYPE_SPELL)
+    end
     GameTooltip:AddLine(" ")
     if main then
-      GameTooltip:AddDoubleLine("Left-click", "Cast " .. entry.name, 1, 1, 1, .2, 1, .8)
+      GameTooltip:AddDoubleLine("Left-click", verb .. " " .. entry.name, 1, 1, 1, .2, 1, .8)
       GameTooltip:AddDoubleLine("Right-click", "Pin the " .. LABEL[entry.element] .. " list", 1, 1, 1, .2, 1, .8)
     else
-      GameTooltip:AddDoubleLine("Left-click", "Cast", 1, 1, 1, .2, 1, .8)
+      GameTooltip:AddDoubleLine("Left-click", verb, 1, 1, 1, .2, 1, .8)
       GameTooltip:AddDoubleLine("Right-click", "Set as active " .. LABEL[entry.element], 1, 1, 1, .2, 1, .8)
     end
     GameTooltip:Show()
@@ -781,8 +898,8 @@ pfUI:RegisterModule("totembar", "vanilla", function()
     local shown, prev = 0, nil
     for _, el in pairs(ParseOrder()) do
       local b = self.buttons[el]
-      if known[el][1] and (el ~= "shield" or cfg.showshield == "1")
-        and (el ~= "weapon" or cfg.showweapon == "1") then
+      if known[el][1] and Enabled(el) and (el ~= "shield" or cfg.showshield == "1")
+        and (el ~= "weapon" or cfg.showweapon == "1") and (el ~= "relic" or cfg.showrelic == "1") then
         shown = shown + 1
         b:SetWidth(size)
         b:SetHeight(size)
@@ -838,7 +955,17 @@ pfUI:RegisterModule("totembar", "vanilla", function()
     for _, el in pairs(GROUPS) do
       local b = this.buttons[el]
       local entry = b:IsShown() and GetActive(el)
-      if entry then
+      if entry and el == "relic" then
+        -- glow the border while the selected totem item is equipped
+        if entry.itemId == EquippedRelicId() then
+          b:SetBackdropBorderColor(COLOR.relic[1], COLOR.relic[2], COLOR.relic[3], 1)
+          b.icon:SetVertexColor(1, 1, 1)
+        else
+          DefaultBorder(b)
+          b.icon:SetVertexColor(.6, .6, .6)
+        end
+        b.timer:SetText("")
+      elseif entry then
         local start, duration, enable = GetSpellCooldown(entry.index, BOOKTYPE_SPELL)
         if start ~= b.cdstart or duration ~= b.cdduration then
           b.cdstart, b.cdduration = start, duration
@@ -925,6 +1052,9 @@ pfUI:RegisterModule("totembar", "vanilla", function()
         if not start or start <= 0 then totemGUID[el] = nil end
       end
       return
+    elseif event == "BAG_UPDATE" or event == "UNIT_INVENTORY_CHANGED" or event == "GET_ITEM_INFO_RECEIVED" then
+      if event ~= "UNIT_INVENTORY_CHANGED" or arg1 == "player" then this.bagdirty = true end
+      return
     elseif event == "SPELL_CAST_EVENT" then
       -- queued casts bypass the CastSpellByName hook pfUI uses to track totems
       if arg1 == 1 and GetSpellNameAndRankForId and pfUI.api.libtotem then
@@ -937,11 +1067,20 @@ pfUI:RegisterModule("totembar", "vanilla", function()
     this.dirty = true
   end)
   events:SetScript("OnUpdate", function()
-    if not this.dirty then return end
-    this.dirty = nil
-    Scan()
-    bar:UpdateConfig()
+    if this.dirty then
+      this.dirty, this.bagdirty = nil, nil
+      Scan()
+      bar:UpdateConfig()
+    elseif this.bagdirty then
+      this.bagdirty = nil
+      ScanRelics()
+      if cfg.relic == "" and known.relic[1] then cfg.relic = known.relic[1].name end
+      bar:UpdateConfig()
+    end
   end)
+  events:RegisterEvent("BAG_UPDATE")
+  events:RegisterEvent("UNIT_INVENTORY_CHANGED")
+  events:RegisterEvent("GET_ITEM_INFO_RECEIVED")
   if UnitGUID and UnitOwnerGUID and UnitCreatedBySpell then
     if CombatLogGetCurrentEventInfo then events:RegisterEvent("COMBAT_LOG_EVENT_UNFILTERED") end
     events:RegisterEvent("PLAYER_TOTEM_UPDATE")
@@ -967,7 +1106,7 @@ pfUI:RegisterModule("totembar", "vanilla", function()
   -- casts unless it is still up (same rules as cast-all); force = always cast
   local function CastElement(el, force)
     el = el and string.lower(el)
-    if not VALID[el] then return end
+    if not VALID[el] or not Enabled(el) then return end
     local entry = GetActive(el)
     if entry and (force or not ShouldSkip(entry)) then Cast(entry) end
   end
@@ -1002,6 +1141,7 @@ pfUI:RegisterModule("totembar", "vanilla", function()
   _G.pfTotemBar.CastShield = function(force) CastElement("shield", force) end
   _G.pfTotemBar.CastTotems = CastTotems
   _G.pfTotemBar.CastWeapon = function(force) CastElement("weapon", force) end
+  _G.pfTotemBar.EquipRelic = function() CastElement("relic") end
   _G.pfTotemBar.Next = function(el) if VALID[el] then Cycle(el, 1) end end
   _G.pfTotemBar.Prev = function(el) if VALID[el] then Cycle(el, -1) end end
   _G.pfTotemBar.SetActive = function(el, name)
@@ -1019,6 +1159,7 @@ pfUI:RegisterModule("totembar", "vanilla", function()
   _G.SlashCmdList["PFTOTEMBAR"] = function(msg)
     local _, _, cmd, rest = string.find(msg or "", "^%s*(%S*)%s*(.-)%s*$")
     cmd = string.lower(cmd or "")
+    if cmd == "item" then cmd = "relic" end
 
     if cmd == "all" then
       CastAll()
@@ -1091,6 +1232,7 @@ pfUI:RegisterModule("totembar", "vanilla", function()
       DEFAULT_CHAT_FRAME:AddMessage("  /totembar earth|fire|water|air |cffaaaaaa- cast the active totem of an element if it needs a refresh")
       DEFAULT_CHAT_FRAME:AddMessage("  /totembar shield |cffaaaaaa- cast the active shield if it is gone / low on charges")
       DEFAULT_CHAT_FRAME:AddMessage("  /totembar weapon |cffaaaaaa- cast the active weapon enchant if it is gone / about to expire")
+      DEFAULT_CHAT_FRAME:AddMessage("  /totembar relic |cffaaaaaa- equip the active totem item (alias: /totembar item)")
       DEFAULT_CHAT_FRAME:AddMessage("  /totembar <element|shield> force |cffaaaaaa- cast it even if it is still up")
       DEFAULT_CHAT_FRAME:AddMessage("  /totembar next|prev <element> |cffaaaaaa- cycle the active totem")
       DEFAULT_CHAT_FRAME:AddMessage("  /totembar set <element> <name|none> |cffaaaaaa- e.g. /totembar set air windfury")
@@ -1133,6 +1275,7 @@ pfUI:RegisterModule("totembar", "vanilla", function()
       end
       CreateConfig(update, T["Shield"], cfg, "shield", "dropdown", TotemValues("shield"))
       CreateConfig(update, T["Weapon Enchant"], cfg, "weapon", "dropdown", TotemValues("weapon"))
+      CreateConfig(update, T["Totem Item"], cfg, "relic", "dropdown", TotemValues("relic"))
 
       CreateConfig(nil, T["Cast All (/totembar all)"], nil, nil, "header")
       for _, el in pairs(GROUPS) do
@@ -1144,12 +1287,18 @@ pfUI:RegisterModule("totembar", "vanilla", function()
       CreateConfig(update, T["...Or You Are Out Of Its Range (UnitXP)"], cfg, "rangecheck", "checkbox")
 
       CreateConfig(nil, T["Shield (/totembar shield)"], nil, nil, "header")
+      CreateConfig(update, T["Enable Shield"], cfg, "enable_shield", "checkbox")
       CreateConfig(update, T["Refresh At X Charges Or Less (0 = only when gone)"], cfg, "shieldcharges")
       CreateConfig(update, T["Show Shield Button"], cfg, "showshield", "checkbox")
 
       CreateConfig(nil, T["Weapon Enchant (/totembar weapon)"], nil, nil, "header")
+      CreateConfig(update, T["Enable Weapon Enchant"], cfg, "enable_weapon", "checkbox")
       CreateConfig(update, T["Refresh At X Minutes Or Less Left (0 = only when gone)"], cfg, "weaponremain")
       CreateConfig(update, T["Show Weapon Enchant Button"], cfg, "showweapon", "checkbox")
+
+      CreateConfig(nil, T["Totem Item Swap (/totembar relic)"], nil, nil, "header")
+      CreateConfig(update, T["Enable Totem Item Swap"], cfg, "enable_relic", "checkbox")
+      CreateConfig(update, T["Show Totem Item Button"], cfg, "showrelic", "checkbox")
 
       CreateConfig(nil, T["Layout"], nil, nil, "header")
       CreateConfig(update, T["Button Size"], cfg, "size")

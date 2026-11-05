@@ -7,4 +7,5 @@
   <Binding name="PFTOTEMBAR_TOTEMS">pfTotemBar.CastTotems()</Binding>
   <Binding name="PFTOTEMBAR_SHIELD">pfTotemBar.CastShield()</Binding>
   <Binding name="PFTOTEMBAR_WEAPON">pfTotemBar.CastWeapon()</Binding>
+  <Binding name="PFTOTEMBAR_RELIC">pfTotemBar.EquipRelic()</Binding>
 </Bindings>
