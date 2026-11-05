@@ -44,6 +44,7 @@ pfUI:RegisterModule("totembar", "vanilla", function()
     relic      = "",                                   -- active totem item (relic slot), item name
     all_relic  = "0",                                  -- include the totem item swap in cast-all
     showrelic  = "1",                                  -- show the totem item button on the bar
+    reverse    = "0",                                  -- reverse the button order on the bar
     enable_shield = "1",                               -- shield feature on/off
     enable_weapon = "1",                               -- weapon enchant feature on/off
     enable_relic  = "1",                               -- totem item swap feature on/off
@@ -579,7 +580,7 @@ pfUI:RegisterModule("totembar", "vanilla", function()
   -- totemsOnly: the 4 totems (ignores the cast-all include boxes), no shield
   local function BuildCastList(totemsOnly, force)
     local list = {}
-    for _, el in pairs(ParseOrder()) do
+    for _, el in ipairs(ParseOrder()) do
       local wanted
       if totemsOnly then wanted = SLOT[el] else wanted = cfg["all_" .. el] == "1" end
       if wanted and Enabled(el) then
@@ -896,7 +897,13 @@ pfUI:RegisterModule("totembar", "vanilla", function()
     self.size, self.spacing = size, spacing
 
     local shown, prev = 0, nil
-    for _, el in pairs(ParseOrder()) do
+    local order = ParseOrder()
+    if cfg.reverse == "1" then
+      local reversed = {}
+      for i = table.getn(order), 1, -1 do table.insert(reversed, order[i]) end
+      order = reversed
+    end
+    for _, el in ipairs(order) do
       local b = self.buttons[el]
       if known[el][1] and Enabled(el) and (el ~= "shield" or cfg.showshield == "1")
         and (el ~= "weapon" or cfg.showweapon == "1") and (el ~= "relic" or cfg.showrelic == "1") then
@@ -1185,7 +1192,7 @@ pfUI:RegisterModule("totembar", "vanilla", function()
         Print("unknown element or spell. Examples: /totembar set fire searing, /totembar set shield water")
       end
     elseif cmd == "list" then
-      for _, el in pairs(ParseOrder()) do
+      for _, el in ipairs(ParseOrder()) do
         local entry = GetActive(el)
         Print(LABEL[el] .. ": " .. (entry and entry.name or "-") .. (cfg["all_" .. el] == "1" and "" or " (not in cast-all)"))
       end
@@ -1304,6 +1311,7 @@ pfUI:RegisterModule("totembar", "vanilla", function()
       CreateConfig(update, T["Button Size"], cfg, "size")
       CreateConfig(update, T["Spacing"], cfg, "spacing", "dropdown", pfUI.gui.dropdowns.spacing)
       CreateConfig(update, T["Bar Direction"], cfg, "direction", "dropdown", pfUI.gui.dropdowns.orientation)
+      CreateConfig(update, T["Reverse Button Order"], cfg, "reverse", "checkbox")
       CreateConfig(update, T["Totem List Direction"], cfg, "flyout", "dropdown", positions)
       CreateConfig(update, T["Open Totem List On Mouseover"], cfg, "hover", "checkbox")
       CreateConfig(update, T["Show Totem Timers"], cfg, "timer", "checkbox")
