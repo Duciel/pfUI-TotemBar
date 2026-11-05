@@ -907,6 +907,8 @@ pfUI:RegisterModule("totembar", "vanilla", function()
       local entry = GetActive(el)
       if known[el][1] then
         b.cdstart, b.cdduration = nil, nil
+        -- [PerfFix] force the next tick to redraw the timer and secondary icon
+        b.tcolor, b.secshowing = 0, nil
         if entry then
           local eff = Effective(el) or entry
           b.icon:SetTexture(eff.icon)
@@ -1023,9 +1025,55 @@ pfUI:RegisterModule("totembar", "vanilla", function()
     return math.floor(remain + .5)
   end
 
+  -- [PerfFix] display-only caches for the shield charges and the weapon
+  -- enchant: both APIs return a fresh table on every call, and the bar asked
+  -- them 10 times per second. They are now read at most once per second
+  -- (shield) / every 5 seconds (weapon, the remaining time is counted down
+  -- locally), and right away when the auras or the gear change. The cast
+  -- logic (ShouldSkip) keeps its live queries.
+  local shieldCache = { t = -10 }
+  local function ShieldChargesShown(entry, now)
+    if shieldCache.entry ~= entry or now - shieldCache.t >= 1 or now < shieldCache.t then
+      shieldCache.entry, shieldCache.t = entry, now
+      shieldCache.v = ShieldCharges(entry)
+    end
+    return shieldCache.v
+  end
+
+  local weaponCache = { t = -10 }
+  local function WeaponEnchantLeftShown(entry, now)
+    if weaponCache.entry ~= entry or now - weaponCache.t >= 5 or now < weaponCache.t then
+      weaponCache.entry, weaponCache.t = entry, now
+      weaponCache.v = WeaponEnchantLeft(entry)
+    end
+    local left = weaponCache.v
+    if left then left = left - (now - weaponCache.t) end
+    return left
+  end
+
+  local cachewatch = CreateFrame("Frame")
+  cachewatch:RegisterEvent("PLAYER_AURAS_CHANGED")
+  cachewatch:RegisterEvent("UNIT_INVENTORY_CHANGED")
+  cachewatch:SetScript("OnEvent", function()
+    if event == "PLAYER_AURAS_CHANGED" then
+      shieldCache.t = -10
+    elseif arg1 == "player" then
+      weaponCache.t = -10
+    end
+  end)
+
+  -- timer text: only rebuilt (and set) when what it shows changes
+  local function SetTimerText(b, color, value)
+    if b.tcolor ~= color or b.tvalue ~= value then
+      b.tcolor, b.tvalue = color, value
+      b.timer:SetText(color and (color .. value .. "|r") or "")
+    end
+  end
+
   bar:SetScript("OnUpdate", function()
-    if (this.tick or 0) > GetTime() then return end
-    this.tick = GetTime() + .1
+    local now = GetTime()
+    if (this.tick or 0) > now then return end
+    this.tick = now + .1
 
     for _, el in pairs(GROUPS) do
       local b = this.buttons[el]
@@ -1039,7 +1087,7 @@ pfUI:RegisterModule("totembar", "vanilla", function()
           DefaultBorder(b)
           b.icon:SetVertexColor(.6, .6, .6)
         end
-        b.timer:SetText("")
+        SetTimerText(b, nil, nil)
       elseif entry then
         -- the cooldown wheel stays on the primary
         local start, duration, enable = GetSpellCooldown(entry.index, BOOKTYPE_SPELL)
@@ -1058,7 +1106,10 @@ pfUI:RegisterModule("totembar", "vanilla", function()
         local sec = GetSecondary(el)
         if b.secframe then
           if sec then
-            b.secframe.icon:SetTexture(sec.icon)
+            if b.secshowing ~= sec then
+              b.secshowing = sec
+              b.secframe.icon:SetTexture(sec.icon)
+            end
             if eff == sec then
               b.secframe:SetBackdropBorderColor(COLOR[el][1], COLOR[el][2], COLOR[el][3], 1)
               b.secframe.icon:SetVertexColor(1, 1, 1)
@@ -1081,18 +1132,18 @@ pfUI:RegisterModule("totembar", "vanilla", function()
           end
         end
 
-        local text = ""
+        local tcolor, tvalue
         if el == "shield" then
           -- charges of the active shield
-          local charges = cfg.timer == "1" and ShieldCharges(entry)
-          if charges then text = "|cffffffff" .. charges .. "|r" end
+          local charges = cfg.timer == "1" and ShieldChargesShown(entry, now)
+          if charges then tcolor, tvalue = "|cffffffff", charges end
         elseif el == "weapon" then
-          local left = cfg.timer == "1" and WeaponEnchantLeft(entry)
-          if left and left > 0 then text = "|cffffffff" .. FormatTime(left) .. "|r" end
+          local left = cfg.timer == "1" and WeaponEnchantLeftShown(entry, now)
+          if left and left > 0 then tcolor, tvalue = "|cffffffff", FormatTime(left) end
         elseif cfg.timer == "1" and GetTotemInfo then
           local active, name, tstart, tduration = GetTotemInfo(SLOT[el])
           if active and tstart then
-            local remain = tstart + tduration - GetTime()
+            local remain = tstart + tduration - now
             if remain > 0 then
               -- white when your active totem is down, grey when another one is
               -- white: your active totem, red: out of range, grey: another totem
@@ -1101,11 +1152,11 @@ pfUI:RegisterModule("totembar", "vanilla", function()
               if down then
                 color = OutOfRange(down) and "|cffff5555" or "|cffffffff"
               end
-              text = color .. FormatTime(remain) .. "|r"
+              tcolor, tvalue = color, FormatTime(remain)
             end
           end
         end
-        b.timer:SetText(text)
+        SetTimerText(b, tcolor, tvalue)
       end
     end
   end)
